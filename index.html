@@ -3,63 +3,118 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>WebXR Plane Detection AR</title>
+    <title>Realistic WebXR AR Assistant</title>
     <style>
+        :root {
+            --primary-accent: #3498db;
+            --success-accent: #2ecc71;
+            --bg-overlay: rgba(0, 0, 0, 0.75);
+            --text-light: #ffffff;
+        }
+
         body {
             margin: 0;
             overflow: hidden;
-            font-family: sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #000; /* Fallback before camera loads */
         }
-        /* Style for the native WebXR Enter AR button */
-        #ar-button {
+
+        /* 1. Minimal UI overlay container */
+        #ar-ui-layer {
             position: absolute;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            padding: 16px 32px;
-            background: #2ECC71;
-            color: white;
-            border: none;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end; /* Align content to bottom */
+            align-items: center;
+            z-index: 10;
+            pointer-events: none; /* Let clicks pass through to 3D scene */
+            padding-bottom: 40px;
+        }
+
+        /* 2. Intelligent Adaptive Instruction Tag */
+        .instruction-tag {
+            background: var(--bg-overlay);
+            color: var(--text-light);
+            padding: 14px 28px;
             border-radius: 30px;
-            font-size: 16px;
-            font-weight: bold;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-            cursor: pointer;
-            z-index: 999;
-        }
-        #instructions {
-            position: absolute;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0,0,0,0.7);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 20px;
-            font-size: 14px;
-            z-index: 998;
-            pointer-events: none;
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            box-shadow: 0 6px 15px rgba(0,0,0,0.4);
+            max-width: 85%;
             text-align: center;
-            display: none;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            pointer-events: none;
+            transition: all 0.3s ease;
+        }
+
+        /* Active tracking indicator icon */
+        .tracking-dot {
+            width: 10px;
+            height: 10px;
+            background-color: #f1c40f; /* Yellow (Waiting) */
+            border-radius: 50%;
+            display: inline-block;
+            transition: background-color 0.3s ease;
+        }
+
+        /* UI State Changes */
+        .tag-searching .tracking-dot { background-color: #e67e22; animation: pulse 1s infinite; } /* Orange Pulse */
+        .tag-found .tracking-dot { background-color: var(--success-accent); } /* Green (Found) */
+        .tag-locked .tracking-dot { display: none; } /* Hidden (Locked) */
+
+        /* Native start button styling (will be injected by Three.js) */
+        #XRButton {
+            border: none !important;
+            bottom: 40px !important;
+            left: 50% !important;
+            transform: translateX(-50%) !important;
+            background-color: var(--primary-accent) !important;
+            color: white !important;
+            padding: 16px 32px !important;
+            border-radius: 30px !important;
+            font-size: 16px !important;
+            font-weight: bold !important;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(230, 126, 34, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(230, 126, 34, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(230, 126, 34, 0); }
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
 
-    <button id="ar-button">START AR</button>
-    <div id="instructions">Move phone slowly to detect a flat surface, then tap to place shapes!</div>
+    <div id="ar-ui-layer">
+        <div id="status-tag" class="instruction-tag tag-searching">
+            <span class="tracking-dot"></span>
+            <span id="instruction-text">Tap START AR to begin</span>
+        </div>
+    </div>
 
     <script type="module">
-        // Using ES Modules for WebXR components
         import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/ARButton.js';
 
         let container, camera, scene, renderer;
-        let reticle;
+        let reticle, droneModel;
         let hitTestSource = null;
         let hitTestSourceRequested = false;
-        let objectsPlaced = false;
-        let objectGroup;
+        let objectPlaced = false;
+        let loader;
+
+        // UI Reference
+        const statusTag = document.getElementById('status-tag');
+        const instructionText = document.getElementById('instruction-text');
 
         init();
 
@@ -68,85 +123,105 @@
             document.body.appendChild(container);
 
             scene = new THREE.Scene();
-
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-            // Setup light sources so shapes have realistic depth and shadows
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+            // 1. Better, cleaner lighting for realism
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
             scene.add(ambientLight);
 
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
             directionalLight.position.set(5, 10, 7);
             scene.add(directionalLight);
 
-            // Renderer MUST have XR enabled
+            // 2. Setup WebXR Renderer with Hit Test required
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.xr.enabled = true;
             container.appendChild(renderer.domElement);
 
-            // Append official WebXR AR Button config with hit-test (plane detection) features
-            const enterButton = ARButton.createButton(renderer, { 
+            // Standard WebXR Enter AR Button
+            const arBtnConfig = { 
                 requiredFeatures: ['hit-test'],
                 optionalFeatures: ['dom-overlay'],
                 domOverlay: { root: document.body }
-            });
-            
-            // Replace our placeholder button with WebXR custom button
-            document.getElementById('ar-button').remove();
-            document.body.appendChild(enterButton);
+            };
+            document.body.appendChild(ARButton.createButton(renderer, arBtnConfig));
 
-            enterButton.addEventListener('click', () => {
-                document.getElementById('instructions').style.display = 'block';
-            });
-
-            // Create a Reticle (the target ring that glides along detected floors/tables)
+            // 3. Setup Scanning Assistant Reticle (Target Ring)
+            // A simple ring geometry rotated flat, colored green when locked
             reticle = new THREE.Mesh(
-                new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2),
-                new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+                new THREE.RingGeometry(0.12, 0.16, 32).rotateX(-Math.PI / 2),
+                new THREE.MeshBasicMaterial({ color: 0x2ecc71, transparent: true, opacity: 0.8 })
             );
             reticle.matrixAutoUpdate = false;
             reticle.visible = false;
             scene.add(reticle);
 
-            // Define the cluster of shapes we want to lock down
-            objectGroup = new THREE.Group();
-            
-            const cube = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), new THREE.MeshStandardMaterial({ color: 0xFF5733 }));
-            cube.position.set(-0.4, 0.15, 0); // raised by half its height to sit perfectly on surface
-            objectGroup.add(cube);
+            // 4. LOAD EXTERNAL GLTF MODEL (A free-use Drone hosted on GitHub)
+            loader = new THREE.GLTFLoader();
+            const modelUrl = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Drone/glTF/Drone.gltf';
 
-            const cylinder = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.4, 32), new THREE.MeshStandardMaterial({ color: 0x0077CC }));
-            cylinder.position.set(0.4, 0.2, 0); 
-            objectGroup.add(cylinder);
+            loader.load(modelUrl, (gltf) => {
+                droneModel = gltf.scene;
+                
+                // Scale and rotate the drone so it looks correct when placed
+                droneModel.scale.set(0.15, 0.15, 0.15); // Adjust size
+                droneModel.rotation.y = Math.PI; // Adjust orientation
+                droneModel.visible = false; // Hide until locked
+                scene.add(droneModel);
+                
+                console.log("Realistic Drone model loaded successfully.");
+            }, undefined, (error) => {
+                console.error("Error loading model:", error);
+            });
 
-            const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.2, 32, 32), new THREE.MeshStandardMaterial({ color: 0x2ECC71 }));
-            sphere.position.set(0, 0.5, 0); 
-            objectGroup.add(sphere);
-
-            // Listen for user screen tap to anchor objects
+            // Handle user tap to place the model
             const controller = renderer.xr.getController(0);
             controller.addEventListener('select', onSelect);
             scene.add(controller);
 
             window.addEventListener('resize', onWindowResize);
 
-            // Start rendering cycle using the XR-optimized loop
+            // Main interaction loop
             renderer.setAnimationLoop(render);
         }
 
+        // --- UX / State Management ---
+
+        // Called when WebXR session starts or ends
+        function setUIState(state) {
+            statusTag.className = `instruction-tag tag-${state}`;
+            
+            switch(state) {
+                case 'searching':
+                    instructionText.innerHTML = "Slowly scan room (floor/table) to detect plane";
+                    break;
+                case 'found':
+                    instructionText.innerHTML = "Surface detected! Tap screen to lock drone.";
+                    statusTag.style.background = "rgba(46, 204, 113, 0.85)"; // Fade to Green
+                    break;
+                case 'locked':
+                    instructionText.innerHTML = "✅ Drone locked to reality. Walk around it.";
+                    statusTag.style.background = "rgba(0, 0, 0, 0.75)"; // Normal back
+                    break;
+            }
+        }
+
+        // --- Core AR Logic ---
+
         function onSelect() {
-            // If the reticle is visible on a surface and we haven't locked objects down yet
-            if (reticle.visible && !objectsPlaced) {
-                // Smoothly snap objects directly to the reticle's real-world matrix positioning
-                objectGroup.position.setFromMatrixPosition(reticle.matrix);
-                objectGroup.quaternion.setFromRotationMatrix(reticle.matrix);
-                scene.add(objectGroup);
+            // When user taps, if a surface is detected and the drone isn't placed yet
+            if (reticle.visible && droneModel && !objectPlaced) {
+                // Snap the realistic drone model to the detected real-world coordinates
+                droneModel.position.setFromMatrixPosition(reticle.matrix);
+                droneModel.quaternion.setFromRotationMatrix(reticle.matrix);
+                droneModel.visible = true; // Make drone appear
                 
-                objectsPlaced = true;
-                reticle.visible = false; // Hide targeting ring
-                document.getElementById('instructions').innerHTML = "✅ Objects Locked! Walk around them.";
+                objectPlaced = true;
+                reticle.visible = false; // Hide the ring
+
+                setUIState('locked'); // Update UX Assistant
             }
         }
 
@@ -156,48 +231,50 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // The core animation loop checking for surface hits every frame
         function render(timestamp, frame) {
-            if (frame) {
+            // Check if AR session is active
+            if (frame && !objectPlaced) {
                 const referenceSpace = renderer.xr.getReferenceSpace();
                 const session = renderer.xr.getSession();
 
-                // Request mathematical plane calculation source from WebXR device engine
+                // Setup hit test source if not active
                 if (hitTestSourceRequested === false) {
                     session.requestReferenceSpace('viewer').then((viewerSpace) => {
                         session.requestHitTestSource({ space: viewerSpace }).then((source) => {
                             hitTestSource = source;
                         });
                     });
+                    
                     session.addEventListener('end', () => {
                         hitTestSourceRequested = false;
                         hitTestSource = null;
+                        // AR Session closed, reset UI placeholder if needed
                     });
+                    
                     hitTestSourceRequested = true;
+                    setUIState('searching'); // START ACTIVE SCANNING
                 }
 
-                // If the tracking source is active, compute intersecting geometric surfaces
-                if (hitTestSource && !objectsPlaced) {
+                // If hit test source exists, update reticle position
+                if (hitTestSource) {
                     const hitTestResults = frame.getHitTestResults(hitTestSource);
 
                     if (hitTestResults.length > 0) {
                         const hit = hitTestResults[0];
                         const pose = hit.getPose(referenceSpace);
 
-                        // If a floor or table surface is detected, make target ring visible
+                        // Match reticle to surface
                         reticle.visible = true;
                         reticle.matrix.fromArray(pose.transform.matrix);
+                        
+                        // Surface Found UX Update
+                        setUIState('found');
                     } else {
                         reticle.visible = false;
+                        // Surface lost/still searching UX update
+                        setUIState('searching');
                     }
                 }
-            }
-
-            // Idle rotate shapes slightly even when locked onto the floor
-            if (objectsPlaced) {
-                objectGroup.children.forEach((shape) => {
-                    shape.rotation.y += 0.01;
-                });
             }
 
             renderer.render(scene, camera);
