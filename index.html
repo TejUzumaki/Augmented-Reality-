@@ -3,23 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Realistic WebXR AR Assistant</title>
+    <title>Instant Food AR Viewer</title>
     <style>
         :root {
-            --primary-accent: #3498db;
-            --success-accent: #2ecc71;
-            --bg-overlay: rgba(0, 0, 0, 0.75);
-            --text-light: #ffffff;
+            --accent: #ff7675;
+            --success: #2ecc71;
+            --bg: rgba(0, 0, 0, 0.8);
         }
 
         body {
             margin: 0;
             overflow: hidden;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #000; /* Fallback before camera loads */
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #000;
         }
 
-        /* 1. Minimal UI overlay container */
         #ar-ui-layer {
             position: absolute;
             top: 0;
@@ -28,66 +26,60 @@
             height: 100vh;
             display: flex;
             flex-direction: column;
-            justify-content: flex-end; /* Align content to bottom */
+            justify-content: flex-end;
             align-items: center;
             z-index: 10;
-            pointer-events: none; /* Let clicks pass through to 3D scene */
+            pointer-events: none;
             padding-bottom: 40px;
         }
 
-        /* 2. Intelligent Adaptive Instruction Tag */
         .instruction-tag {
-            background: var(--bg-overlay);
-            color: var(--text-light);
-            padding: 14px 28px;
+            background: var(--bg);
+            color: white;
+            padding: 14px 24px;
             border-radius: 30px;
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 600;
-            letter-spacing: 0.5px;
-            box-shadow: 0 6px 15px rgba(0,0,0,0.4);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
             max-width: 85%;
             text-align: center;
             display: flex;
             align-items: center;
-            gap: 12px;
-            pointer-events: none;
+            gap: 10px;
             transition: all 0.3s ease;
+            border: 1px solid rgba(255,255,255,0.1);
         }
 
-        /* Active tracking indicator icon */
-        .tracking-dot {
-            width: 10px;
-            height: 10px;
-            background-color: #f1c40f; /* Yellow (Waiting) */
+        .status-pulse {
+            width: 8px;
+            height: 8px;
+            background-color: #fdcb6e;
             border-radius: 50%;
             display: inline-block;
-            transition: background-color 0.3s ease;
         }
 
-        /* UI State Changes */
-        .tag-searching .tracking-dot { background-color: #e67e22; animation: pulse 1s infinite; } /* Orange Pulse */
-        .tag-found .tracking-dot { background-color: var(--success-accent); } /* Green (Found) */
-        .tag-locked .tracking-dot { display: none; } /* Hidden (Locked) */
+        .searching .status-pulse { background-color: #e17055; animation: pulse 1s infinite; }
+        .ready .status-pulse { background-color: var(--success); }
+        .placed .status-pulse { display: none; }
 
-        /* Native start button styling (will be injected by Three.js) */
         #XRButton {
             border: none !important;
             bottom: 40px !important;
             left: 50% !important;
             transform: translateX(-50%) !important;
-            background-color: var(--primary-accent) !important;
+            background-color: var(--accent) !important;
             color: white !important;
             padding: 16px 32px !important;
             border-radius: 30px !important;
             font-size: 16px !important;
             font-weight: bold !important;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important;
+            box-shadow: 0 6px 20px rgba(255, 118, 117, 0.4) !important;
         }
 
         @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(230, 126, 34, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(230, 126, 34, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(230, 126, 34, 0); }
+            0% { box-shadow: 0 0 0 0 rgba(225, 112, 85, 0.7); }
+            70% { box-shadow: 0 0 0 8px rgba(225, 112, 85, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(225, 112, 85, 0); }
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -96,9 +88,9 @@
 <body>
 
     <div id="ar-ui-layer">
-        <div id="status-tag" class="instruction-tag tag-searching">
-            <span class="tracking-dot"></span>
-            <span id="instruction-text">Tap START AR to begin</span>
+        <div id="status-tag" class="instruction-tag searching">
+            <span class="status-pulse"></span>
+            <span id="instruction-text">Tap START AR to serve dinner</span>
         </div>
     </div>
 
@@ -106,13 +98,11 @@
         import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/ARButton.js';
 
         let container, camera, scene, renderer;
-        let reticle, droneModel;
+        let reticle, foodModel;
         let hitTestSource = null;
         let hitTestSourceRequested = false;
         let objectPlaced = false;
-        let loader;
 
-        // UI Reference
         const statusTag = document.getElementById('status-tag');
         const instructionText = document.getElementById('instruction-text');
 
@@ -125,104 +115,81 @@
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-            // 1. Better, cleaner lighting for realism
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+            // Studio-quality food lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
             scene.add(ambientLight);
 
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
-            directionalLight.position.set(5, 10, 7);
-            scene.add(directionalLight);
+            const keyLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            keyLight.position.set(2, 4, 3);
+            scene.add(keyLight);
 
-            // 2. Setup WebXR Renderer with Hit Test required
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.xr.enabled = true;
             container.appendChild(renderer.domElement);
 
-            // Standard WebXR Enter AR Button
-            const arBtnConfig = { 
+            document.body.appendChild(ARButton.createButton(renderer, { 
                 requiredFeatures: ['hit-test'],
                 optionalFeatures: ['dom-overlay'],
                 domOverlay: { root: document.body }
-            };
-            document.body.appendChild(ARButton.createButton(renderer, arBtnConfig));
+            }));
 
-            // 3. Setup Scanning Assistant Reticle (Target Ring)
-            // A simple ring geometry rotated flat, colored green when locked
+            // Reticle Target Ring
             reticle = new THREE.Mesh(
-                new THREE.RingGeometry(0.12, 0.16, 32).rotateX(-Math.PI / 2),
-                new THREE.MeshBasicMaterial({ color: 0x2ecc71, transparent: true, opacity: 0.8 })
+                new THREE.RingGeometry(0.1, 0.13, 32).rotateX(-Math.PI / 2),
+                new THREE.MeshBasicMaterial({ color: 0xff7675 })
             );
             reticle.matrixAutoUpdate = false;
             reticle.visible = false;
             scene.add(reticle);
 
-            // 4. LOAD EXTERNAL GLTF MODEL (A free-use Drone hosted on GitHub)
-            loader = new THREE.GLTFLoader();
-            const modelUrl = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Drone/glTF/Drone.gltf';
+            // LOAD OPTIMIZED 3D RAMEN DISH MODEL
+            const loader = new THREE.GLTFLoader();
+            const foodUrl = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/RamenBowl/glTF/RamenBowl.gltf';
 
-            loader.load(modelUrl, (gltf) => {
-                droneModel = gltf.scene;
-                
-                // Scale and rotate the drone so it looks correct when placed
-                droneModel.scale.set(0.15, 0.15, 0.15); // Adjust size
-                droneModel.rotation.y = Math.PI; // Adjust orientation
-                droneModel.visible = false; // Hide until locked
-                scene.add(droneModel);
-                
-                console.log("Realistic Drone model loaded successfully.");
-            }, undefined, (error) => {
-                console.error("Error loading model:", error);
+            loader.load(foodUrl, (gltf) => {
+                foodModel = gltf.scene;
+                foodModel.scale.set(0.6, 0.6, 0.6); // Perfect scale for a table setting
+                foodModel.visible = false;
+                scene.add(foodModel);
             });
 
-            // Handle user tap to place the model
             const controller = renderer.xr.getController(0);
             controller.addEventListener('select', onSelect);
             scene.add(controller);
 
             window.addEventListener('resize', onWindowResize);
-
-            // Main interaction loop
             renderer.setAnimationLoop(render);
         }
 
-        // --- UX / State Management ---
-
-        // Called when WebXR session starts or ends
-        function setUIState(state) {
-            statusTag.className = `instruction-tag tag-${state}`;
-            
-            switch(state) {
-                case 'searching':
-                    instructionText.innerHTML = "Slowly scan room (floor/table) to detect plane";
-                    break;
-                case 'found':
-                    instructionText.innerHTML = "Surface detected! Tap screen to lock drone.";
-                    statusTag.style.background = "rgba(46, 204, 113, 0.85)"; // Fade to Green
-                    break;
-                case 'locked':
-                    instructionText.innerHTML = "✅ Drone locked to reality. Walk around it.";
-                    statusTag.style.background = "rgba(0, 0, 0, 0.75)"; // Normal back
-                    break;
-            }
+        function setUIState(state, customText = '') {
+            statusTag.className = `instruction-tag ${state}`;
+            instructionText.innerHTML = customText || (state === 'searching' ? "Scan table slowly... or tap anywhere to force place!" : "Surface found! Tap to serve ramen 🍜");
         }
 
-        // --- Core AR Logic ---
-
         function onSelect() {
-            // When user taps, if a surface is detected and the drone isn't placed yet
-            if (reticle.visible && droneModel && !objectPlaced) {
-                // Snap the realistic drone model to the detected real-world coordinates
-                droneModel.position.setFromMatrixPosition(reticle.matrix);
-                droneModel.quaternion.setFromRotationMatrix(reticle.matrix);
-                droneModel.visible = true; // Make drone appear
-                
-                objectPlaced = true;
-                reticle.visible = false; // Hide the ring
+            if (!foodModel || objectPlaced) return;
 
-                setUIState('locked'); // Update UX Assistant
+            if (reticle.visible) {
+                // Method A: Perfect Alignment on Detected Surface
+                foodModel.position.setFromMatrixPosition(reticle.matrix);
+                foodModel.quaternion.setFromRotationMatrix(reticle.matrix);
+            } else {
+                // Method B: BULLETPROOF FALLBACK 
+                // If tracking is taking too long, drop it exactly 1.2 meters directly in front of the camera
+                const dir = new THREE.Vector3();
+                camera.getWorldDirection(dir);
+                
+                foodModel.position.copy(camera.position).add(dir.multiplyScalar(1.2));
+                foodModel.position.y -= 0.3; // Sit slightly lower down so it feels like it's on a surface
+                foodModel.rotation.set(0, camera.rotation.y, 0); 
             }
+
+            foodModel.visible = true;
+            objectPlaced = true;
+            reticle.visible = false;
+            setUIState('placed', '✅ Ramen Served! Walk around the dish.');
         }
 
         function onWindowResize() {
@@ -232,30 +199,24 @@
         }
 
         function render(timestamp, frame) {
-            // Check if AR session is active
             if (frame && !objectPlaced) {
                 const referenceSpace = renderer.xr.getReferenceSpace();
                 const session = renderer.xr.getSession();
 
-                // Setup hit test source if not active
                 if (hitTestSourceRequested === false) {
                     session.requestReferenceSpace('viewer').then((viewerSpace) => {
                         session.requestHitTestSource({ space: viewerSpace }).then((source) => {
                             hitTestSource = source;
                         });
                     });
-                    
                     session.addEventListener('end', () => {
                         hitTestSourceRequested = false;
                         hitTestSource = null;
-                        // AR Session closed, reset UI placeholder if needed
                     });
-                    
                     hitTestSourceRequested = true;
-                    setUIState('searching'); // START ACTIVE SCANNING
+                    setUIState('searching');
                 }
 
-                // If hit test source exists, update reticle position
                 if (hitTestSource) {
                     const hitTestResults = frame.getHitTestResults(hitTestSource);
 
@@ -263,18 +224,19 @@
                         const hit = hitTestResults[0];
                         const pose = hit.getPose(referenceSpace);
 
-                        // Match reticle to surface
                         reticle.visible = true;
                         reticle.matrix.fromArray(pose.transform.matrix);
-                        
-                        // Surface Found UX Update
-                        setUIState('found');
+                        setUIState('ready');
                     } else {
                         reticle.visible = false;
-                        // Surface lost/still searching UX update
                         setUIState('searching');
                     }
                 }
+            }
+
+            // Soft slow automatic spin so the lighting sparkles off the food textures
+            if (objectPlaced && foodModel) {
+                foodModel.rotation.y += 0.004;
             }
 
             renderer.render(scene, camera);
