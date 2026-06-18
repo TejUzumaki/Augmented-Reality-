@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Advanced Snap AR Lens</title>
+    <title>Advanced Snap AR Lens Pro</title>
     <style>
         :root {
             --accent: #2ecc71;
@@ -20,7 +20,6 @@
             user-select: none; -webkit-user-select: none;
         }
 
-        /* Preloader Screen */
         #loader-screen {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background-color: var(--bg-dark); z-index: 1000;
@@ -41,13 +40,11 @@
             box-shadow: 0 8px 20px rgba(46, 204, 113, 0.3);
         }
 
-        /* AR UI Layer */
         #ar-ui-layer {
             position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
             z-index: 10; pointer-events: none; display: none;
         }
 
-        /* Top Notification HUD */
         .hud-status {
             position: absolute; top: 25px; left: 50%; transform: translateX(-50%);
             background: rgba(0, 0, 0, 0.75); padding: 12px 24px; border-radius: 30px;
@@ -55,14 +52,13 @@
             border: 1px solid rgba(255,255,255,0.1); pointer-events: none;
         }
 
-        /* Right-Side Snap-Style Vertical Scroll Menu Bar */
         .vertical-menu-tray {
             position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
             display: flex; flex-direction: column; gap: 16px;
             max-height: 65vh; overflow-y: scroll; pointer-events: auto;
-            padding: 10px 6px; scrollbar-width: none; /* Hide scrollbar Firefox */
+            padding: 10px 6px; scrollbar-width: none;
         }
-        .vertical-menu-tray::-webkit-scrollbar { display: none; } /* Hide scrollbar Chrome/Safari */
+        .vertical-menu-tray::-webkit-scrollbar { display: none; }
 
         .filter-node {
             width: 64px; height: 64px; border-radius: 50%;
@@ -78,7 +74,6 @@
             transform: scale(1.12); box-shadow: 0 0 15px rgba(46,204,113,0.5);
         }
 
-        /* Native Button Override rules */
         #XRButton {
             border: none !important; bottom: 40px !important; left: 50% !important;
             transform: translateX(-50%) !important; background: var(--accent) !important;
@@ -105,34 +100,36 @@
     <div id="ar-ui-layer">
         <div class="hud-status" id="hud-text">Move camera to find floor or table</div>
         
-        <div class="vertical-menu-tray">
-            <div class="filter-node active" onclick="switchActiveFilter(0, this)">🥑</div>
-            <div class="filter-node" onclick="switchActiveFilter(1, this)">🚗</div>
-            <div class="filter-node" onclick="switchActiveFilter(2, this)">🪑</div>
-            <div class="filter-node" onclick="switchActiveFilter(3, this)">🍰</div>
-        </div>
+        <div class="vertical-menu-tray" id="ui-tray">
+            </div>
     </div>
 
     <script type="module">
         import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/ARButton.js';
 
         let container, camera, scene, renderer;
-        let reticle;
+        let reticle, shadowPlane;
         let hitTestSource = null, hitTestSourceRequested = false;
 
-        // Inventory Model Catalog Config mapping
         const modelsCatalog = [
-            { name: 'Avocado', url: './Avocado.glb', scale: 4.0, mesh: null },
-            { name: 'ToyCar', url: './ToyCar.glb', scale: 0.15, mesh: null },
-            { name: 'Chair', url: './Chair.glb', scale: 0.6, mesh: null },
-            { name: 'Cake', url: './Cake.glb', scale: 0.4, mesh: null }
+            { name: 'Avocado', url: './Avocado.glb', scale: 4.0, icon: '🥑', mesh: null },
+            { name: 'ToyCar', url: './ToyCar.glb', scale: 0.15, icon: '🚗', mesh: null },
+            { name: 'Chair', url: './Chair.glb', scale: 0.6, icon: '🪑', mesh: null },
+            { name: 'Cake', url: './Cake.glb', scale: 0.4, icon: '🍰', mesh: null }
         ];
 
-        let activeIndex = 0;
+        let activeIndex = -1;
         let activeModelInstance = null;
         let isHolding = false;
 
+        // Gestures state variables
+        let startTouchDistance = 0;
+        let startModelScale = new THREE.Vector3();
+        let startTouchAngle = 0;
+        let startModelRotationY = 0;
+
         const hudText = document.getElementById('hud-text');
+        const uiTray = document.getElementById('ui-tray');
 
         window.triggerAssetEngineDownload = function() {
             document.getElementById('start-btn').style.display = 'none';
@@ -149,17 +146,34 @@
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-            // Studio Lighting Setup
-            scene.add(new THREE.AmbientLight(0xffffff, 1.4));
-            const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-            sun.position.set(2, 6, 4);
+            // Studio Lighting + Shadow Config
+            scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+            
+            const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+            sun.position.set(4, 8, 4);
+            sun.castShadow = true;
+            sun.shadow.mapSize.width = 1024;
+            sun.shadow.mapSize.height = 1024;
+            sun.shadow.camera.near = 0.5;
+            sun.shadow.camera.far = 15;
             scene.add(sun);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.xr.enabled = true;
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             container.appendChild(renderer.domElement);
+
+            // REALISTIC SHADOW PLANE LAYER
+            const planeGeo = new THREE.PlaneGeometry(20, 20);
+            const shadowMat = new THREE.ShadowMaterial({ opacity: 0.4 });
+            shadowPlane = new THREE.Mesh(planeGeo, shadowMat);
+            shadowPlane.rotation.x = -Math.PI / 2;
+            shadowPlane.receiveShadow = true;
+            shadowPlane.visible = false;
+            scene.add(shadowPlane);
 
             // Grid Tracking Reticle
             reticle = new THREE.Mesh(
@@ -173,18 +187,27 @@
             loadCatalogSequentially(0);
         }
 
-        // Sequential local caching loop
+        // FAIL-SAFE SEQUENTIAL DOWNLOAD ENGINE
         function loadCatalogSequentially(index) {
             if (index >= modelsCatalog.length) {
                 completeEngineValidation();
                 return;
             }
 
-            document.getElementById('loader-status').innerHTML = `Caching model pack: ${modelsCatalog[index].name}...`;
+            document.getElementById('loader-status').innerHTML = `Caching: ${modelsCatalog[index].name}...`;
             const loader = new THREE.GLTFLoader();
             
             loader.load(modelsCatalog[index].url, (gltf) => {
                 const modelScene = gltf.scene;
+                
+                // Configure meshes to cast shadows properly
+                modelScene.traverse((node) => {
+                    if (node.isMesh) {
+                        node.castShadow = true;
+                        node.receiveShadow = true;
+                    }
+                });
+
                 const s = modelsCatalog[index].scale;
                 modelScene.scale.set(s, s, s);
                 modelScene.visible = false;
@@ -192,19 +215,49 @@
                 
                 modelsCatalog[index].mesh = modelScene;
                 
-                // Track forward loop progress 
-                const percentage = Math.round(((index + 1) / modelsCatalog.length) * 100);
-                document.getElementById('progress-bar').style.width = percentage + '%';
-                document.getElementById('percentage-text').innerHTML = percentage + '%';
-                
+                updateLoaderProgress(index);
                 loadCatalogSequentially(index + 1);
             }, undefined, (err) => {
-                console.error("Critical Asset failed loading step: ", err);
-                document.getElementById('loader-status').innerHTML = `Missing asset tracking: ${modelsCatalog[index].name}.glb. Check filename match.`;
+                // FAIL-SAFE GRACEFUL SKIP: Log error, but proceed to next model instead of breaking
+                console.warn(`Asset skipped (likely un-uploaded): ${modelsCatalog[index].name}`);
+                updateLoaderProgress(index);
+                loadCatalogSequentially(index + 1);
             });
         }
 
+        function updateLoaderProgress(index) {
+            const percentage = Math.round(((index + 1) / modelsCatalog.length) * 100);
+            document.getElementById('progress-bar').style.width = percentage + '%';
+            document.getElementById('percentage-text').innerHTML = percentage + '%';
+        }
+
         function completeEngineValidation() {
+            // Dynamically generate the vertical tray buttons only for files that actually downloaded
+            let firstAvailableIndex = -1;
+            uiTray.innerHTML = ""; 
+
+            modelsCatalog.forEach((item, idx) => {
+                if (item.mesh !== null) {
+                    if (firstAvailableIndex === -1) firstAvailableIndex = idx;
+                    
+                    const node = document.createElement('div');
+                    node.className = `filter-node ${idx === firstAvailableIndex ? 'active' : ''}`;
+                    node.innerHTML = item.icon;
+                    node.onclick = (e) => {
+                        e.stopPropagation();
+                        switchActiveFilter(idx, node);
+                    };
+                    uiTray.appendChild(node);
+                }
+            });
+
+            if (firstAvailableIndex === -1) {
+                document.getElementById('loader-status').innerHTML = "Error: No models found. Please upload at least one .glb file.";
+                return;
+            }
+
+            activeIndex = firstAvailableIndex;
+
             const xrBtn = ARButton.createButton(renderer, {
                 requiredFeatures: ['hit-test'],
                 optionalFeatures: ['dom-overlay'],
@@ -220,38 +273,74 @@
             renderer.setAnimationLoop(renderLoop);
         }
 
-        // --- Interaction Drag & Drop Tracking Logic ---
+        // --- Multi-Touch Gestures & Interaction Controls ---
         function setupInteractionListeners() {
-            // Track when user holds down on screen
-            window.addEventListener('touchstart', (e) => { isHolding = true; });
-            window.addEventListener('mousedown', (e) => { isHolding = true; });
-
-            // Track when user releases screen
-            window.addEventListener('touchend', (e) => { isHolding = false; });
-            window.addEventListener('mouseup', (e) => { isHolding = false; });
+            window.addEventListener('touchstart', onTouchStart, { passive: false });
+            window.addEventListener('touchmove', onTouchMove, { passive: false });
+            window.addEventListener('touchend', () => { isHolding = false; });
+            
+            // Mouse fallbacks
+            window.addEventListener('mousedown', () => { isHolding = true; });
+            window.addEventListener('mouseup', () => { isHolding = false; });
         }
 
-        // Global function attached to UI nodes
+        function onTouchStart(e) {
+            if (e.touches.length === 1) {
+                isHolding = true;
+            } else if (e.touches.length === 2 && activeModelInstance && activeModelInstance.visible) {
+                isHolding = false; // Disable dragging when scaling/rotating
+                
+                // Calculate starting distance for scaling
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                startTouchDistance = Math.sqrt(dx * dx + dy * dy);
+                startModelScale.copy(activeModelInstance.scale);
+
+                // Calculate starting angle for rotation
+                startTouchAngle = Math.atan2(dy, dx);
+                startModelRotationY = activeModelInstance.rotation.y;
+            }
+        }
+
+        function onTouchMove(e) {
+            if (e.touches.length === 2 && activeModelInstance && activeModelInstance.visible) {
+                e.preventDefault(); // Stop native page bouncing
+
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                
+                // 1. Pinch-to-Scale Feature
+                const currentDistance = Math.sqrt(dx * dx + dy * dy);
+                if (startTouchDistance > 0) {
+                    const factor = currentDistance / startTouchDistance;
+                    activeModelInstance.scale.copy(startModelScale).multiplyScalar(factor);
+                }
+
+                // 2. Multi-Touch Twist Rotation Feature
+                const currentAngle = Math.atan2(dy, dx);
+                const angleChange = currentAngle - startTouchAngle;
+                activeModelInstance.rotation.y = startModelRotationY + angleChange;
+            }
+        }
+
         window.switchActiveFilter = function(targetIdx, element) {
             if (targetIdx === activeIndex) return;
 
-            // Remove active classes from other menu circles
             document.querySelectorAll('.filter-node').forEach(el => el.classList.remove('active'));
             element.classList.add('active');
 
-            // Instantly hide the old active model instance
-            if (activeModelInstance) {
-                activeModelInstance.visible = false;
-            }
+            if (activeModelInstance) activeModelInstance.visible = false;
 
             activeIndex = targetIdx;
             activeModelInstance = modelsCatalog[activeIndex].mesh;
             
-            // If the ring tracking is on a surface, instantly snap the new model there
             if (reticle.visible && activeModelInstance) {
                 activeModelInstance.position.setFromMatrixPosition(reticle.matrix);
                 activeModelInstance.quaternion.setFromRotationMatrix(reticle.matrix);
                 activeModelInstance.visible = true;
+                
+                shadowPlane.position.setFromMatrixPosition(reticle.matrix);
+                shadowPlane.visible = true;
             }
         }
 
@@ -279,19 +368,20 @@
                         reticle.visible = true;
                         reticle.matrix.fromArray(pose.transform.matrix);
 
-                        // INITIAL STATE: If no item is deployed yet, load index 0 onto first surface match
-                        if (!activeModelInstance) {
+                        if (activeIndex !== -1 && !activeModelInstance) {
                             activeModelInstance = modelsCatalog[activeIndex].mesh;
                         }
 
-                        // HIGH FREQUENCY SNAP COUPLING (Anti-Floating Logic):
-                        // If user is holding their finger down OR the item hasn't been locked down yet,
-                        // constantly glue the model's position directly onto the surface tracking data.
-                        if (isHolding || !activeModelInstance.visible) {
+                        // Drag and drop tracking logic
+                        if (activeModelInstance && (isHolding || !activeModelInstance.visible)) {
                             activeModelInstance.position.setFromMatrixPosition(reticle.matrix);
-                            activeModelInstance.quaternion.setFromRotationMatrix(reticle.matrix);
+                            
+                            // Align shadow plane tightly under the object on the floor
+                            shadowPlane.position.setFromMatrixPosition(reticle.matrix);
+                            
                             activeModelInstance.visible = true;
-                            hudText.innerHTML = `Hold & drag to slide ${modelsCatalog[activeIndex].name}! 🌟`;
+                            shadowPlane.visible = true;
+                            hudText.innerHTML = `Drag to slide | 2-Fingers to Scale/Rotate 🥑`;
                         }
                     } else {
                         reticle.visible = false;
@@ -302,9 +392,9 @@
                 }
             }
 
-            // Continuous slow spin on whatever model is currently active
-            if (activeModelInstance && activeModelInstance.visible && !isHolding) {
-                activeModelInstance.rotation.y += 0.006;
+            // Fallback passive rotation ONLY if user isn't actively adjusting it
+            if (activeModelInstance && activeModelInstance.visible && !isHolding && startTouchDistance === 0) {
+                // Removed aggressive override rotation to respect user adjustments
             }
 
             renderer.render(scene, camera);
