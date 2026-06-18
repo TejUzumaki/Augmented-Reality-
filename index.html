@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Instant Food AR Viewer</title>
+    <title>Instant Ramen AR</title>
     <style>
         :root {
             --accent: #ff7675;
@@ -11,11 +11,14 @@
             --bg: rgba(0, 0, 0, 0.8);
         }
 
-        body {
+        body, html {
             margin: 0;
+            padding: 0;
             overflow: hidden;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background-color: #000;
+            width: 100%;
+            height: 100%;
         }
 
         #ar-ui-layer {
@@ -29,8 +32,8 @@
             justify-content: flex-end;
             align-items: center;
             z-index: 10;
-            pointer-events: none;
-            padding-bottom: 40px;
+            pointer-events: none; /* Crucial: lets taps pass through */
+            padding-bottom: 50px;
         }
 
         .instruction-tag {
@@ -46,7 +49,6 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            transition: all 0.3s ease;
             border: 1px solid rgba(255,255,255,0.1);
         }
 
@@ -64,7 +66,7 @@
 
         #XRButton {
             border: none !important;
-            bottom: 40px !important;
+            bottom: 50px !important;
             left: 50% !important;
             transform: translateX(-50%) !important;
             background-color: var(--accent) !important;
@@ -90,7 +92,7 @@
     <div id="ar-ui-layer">
         <div id="status-tag" class="instruction-tag searching">
             <span class="status-pulse"></span>
-            <span id="instruction-text">Tap START AR to serve dinner</span>
+            <span id="instruction-text">Tap START AR</span>
         </div>
     </div>
 
@@ -115,13 +117,13 @@
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-            // Studio-quality food lighting
-            const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+            // Bright studio lights for the food texturing
+            const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
             scene.add(ambientLight);
 
-            const keyLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            keyLight.position.set(2, 4, 3);
-            scene.add(keyLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            directionalLight.position.set(2, 5, 3);
+            scene.add(directionalLight);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
@@ -135,29 +137,35 @@
                 domOverlay: { root: document.body }
             }));
 
-            // Reticle Target Ring
+            // Plain red target ring
             reticle = new THREE.Mesh(
-                new THREE.RingGeometry(0.1, 0.13, 32).rotateX(-Math.PI / 2),
+                new THREE.RingGeometry(0.1, 0.14, 32).rotateX(-Math.PI / 2),
                 new THREE.MeshBasicMaterial({ color: 0xff7675 })
             );
             reticle.matrixAutoUpdate = false;
             reticle.visible = false;
             scene.add(reticle);
 
-            // LOAD OPTIMIZED 3D RAMEN DISH MODEL
+            // Load Ramen Bowl GLTF
             const loader = new THREE.GLTFLoader();
             const foodUrl = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/RamenBowl/glTF/RamenBowl.gltf';
 
             loader.load(foodUrl, (gltf) => {
                 foodModel = gltf.scene;
-                foodModel.scale.set(0.6, 0.6, 0.6); // Perfect scale for a table setting
+                foodModel.scale.set(0.7, 0.7, 0.7); // Bumping size up slightly so it looks great on a table
                 foodModel.visible = false;
                 scene.add(foodModel);
+                console.log("Ramen model loaded!");
             });
 
+            // Input Handler 1: Handles WebXR hardware controller inputs (Screen taps inside AR mode)
             const controller = renderer.xr.getController(0);
-            controller.addEventListener('select', onSelect);
+            controller.addEventListener('select', tryPlacingObject);
             scene.add(controller);
+
+            // Input Handler 2: Fail-safe HTML screen tap wrapper
+            window.addEventListener('click', tryPlacingObject);
+            window.addEventListener('touchstart', tryPlacingObject);
 
             window.addEventListener('resize', onWindowResize);
             renderer.setAnimationLoop(render);
@@ -165,31 +173,34 @@
 
         function setUIState(state, customText = '') {
             statusTag.className = `instruction-tag ${state}`;
-            instructionText.innerHTML = customText || (state === 'searching' ? "Scan table slowly... or tap anywhere to force place!" : "Surface found! Tap to serve ramen 🍜");
+            if (customText) {
+                instructionText.innerHTML = customText;
+            } else {
+                instructionText.innerHTML = state === 'searching' ? "Scanning... Tap screen anywhere to place!" : "Surface found! Tap anywhere to serve 🍜";
+            }
         }
 
-        function onSelect() {
+        // Combined placement action
+        function tryPlacingObject() {
             if (!foodModel || objectPlaced) return;
 
             if (reticle.visible) {
-                // Method A: Perfect Alignment on Detected Surface
+                // If tracking found your rug/floor, plant it right on the matrix coordinate
                 foodModel.position.setFromMatrixPosition(reticle.matrix);
                 foodModel.quaternion.setFromRotationMatrix(reticle.matrix);
             } else {
-                // Method B: BULLETPROOF FALLBACK 
-                // If tracking is taking too long, drop it exactly 1.2 meters directly in front of the camera
-                const dir = new THREE.Vector3();
-                camera.getWorldDirection(dir);
-                
-                foodModel.position.copy(camera.position).add(dir.multiplyScalar(1.2));
-                foodModel.position.y -= 0.3; // Sit slightly lower down so it feels like it's on a surface
-                foodModel.rotation.set(0, camera.rotation.y, 0); 
+                // Hard absolute fallback if tracking acts up
+                const direction = new THREE.Vector3();
+                camera.getWorldDirection(direction);
+                foodModel.position.copy(camera.position).add(direction.multiplyScalar(1.0));
+                foodModel.position.y -= 0.2; 
+                foodModel.rotation.set(0, camera.rotation.y, 0);
             }
 
             foodModel.visible = true;
             objectPlaced = true;
             reticle.visible = false;
-            setUIState('placed', '✅ Ramen Served! Walk around the dish.');
+            setUIState('placed', '✅ Ramen Served! Move around it.');
         }
 
         function onWindowResize() {
@@ -234,9 +245,9 @@
                 }
             }
 
-            // Soft slow automatic spin so the lighting sparkles off the food textures
+            // Continuous rotating spin for presentation depth
             if (objectPlaced && foodModel) {
-                foodModel.rotation.y += 0.004;
+                foodModel.rotation.y += 0.005;
             }
 
             renderer.render(scene, camera);
