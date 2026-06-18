@@ -3,118 +3,88 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Preloaded Local GLB AR</title>
+    <title>Advanced Snap AR Lens</title>
     <style>
         :root {
-            --primary: #2ecc71;
-            --success: #2ecc71;
-            --surface: #1e272e;
+            --accent: #2ecc71;
+            --glass: rgba(255, 255, 255, 0.15);
+            --glass-active: rgba(46, 204, 113, 0.4);
+            --bg-dark: #11141a;
         }
 
         body, html {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
+            margin: 0; padding: 0; overflow: hidden;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: var(--surface);
-            width: 100%;
-            height: 100%;
-            color: white;
+            background-color: var(--bg-dark);
+            width: 100%; height: 100%; color: white;
+            user-select: none; -webkit-user-select: none;
         }
 
+        /* Preloader Screen */
         #loader-screen {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background-color: var(--surface);
-            z-index: 1000;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background-color: var(--bg-dark); z-index: 1000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
         }
-
         .loader-card {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 30px;
-            border-radius: 20px;
-            text-align: center;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            width: 80%;
-            max-width: 350px;
-            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(255, 255, 255, 0.03); padding: 30px; border-radius: 24px;
+            text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            width: 80%; max-width: 320px; border: 1px solid rgba(255,255,255,0.08);
+        }
+        .progress-bar-bg {
+            width: 100%; background: rgba(255,255,255,0.1); border-radius: 10px; height: 6px; margin: 20px 0; overflow: hidden;
+        }
+        #progress-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.1s linear; }
+        .btn {
+            background: var(--accent); color: white; border: none; padding: 14px 32px;
+            font-size: 16px; font-weight: bold; border-radius: 30px; cursor: pointer;
+            box-shadow: 0 8px 20px rgba(46, 204, 113, 0.3);
         }
 
-        .progress-container {
-            width: 100%;
-            background-color: rgba(255,255,255,0.1);
-            border-radius: 10px;
-            height: 8px;
-            margin: 20px 0;
-            overflow: hidden;
-        }
-
-        #progress-bar {
-            width: 0%;
-            height: 100%;
-            background-color: var(--primary);
-            transition: width 0.1s linear;
-        }
-
-        .download-btn {
-            background-color: var(--primary);
-            color: white;
-            border: none;
-            padding: 14px 28px;
-            font-size: 16px;
-            font-weight: bold;
-            border-radius: 30px;
-            cursor: pointer;
-            box-shadow: 0 5px 15px rgba(46, 204, 113, 0.4);
-        }
-
+        /* AR UI Layer */
         #ar-ui-layer {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-end;
-            align-items: center;
-            z-index: 10;
-            pointer-events: none;
-            padding-bottom: 50px;
-            display: none;
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 10; pointer-events: none; display: none;
         }
 
-        .instruction-tag {
-            background: rgba(0,0,0,0.85);
-            color: white;
-            padding: 14px 24px;
-            border-radius: 30px;
-            font-size: 14px;
-            font-weight: 600;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-            border: 1px solid rgba(255,255,255,0.1);
+        /* Top Notification HUD */
+        .hud-status {
+            position: absolute; top: 25px; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.75); padding: 12px 24px; border-radius: 30px;
+            font-size: 13px; font-weight: 600; text-align: center; white-space: nowrap;
+            border: 1px solid rgba(255,255,255,0.1); pointer-events: none;
         }
 
+        /* Right-Side Snap-Style Vertical Scroll Menu Bar */
+        .vertical-menu-tray {
+            position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+            display: flex; flex-direction: column; gap: 16px;
+            max-height: 65vh; overflow-y: scroll; pointer-events: auto;
+            padding: 10px 6px; scrollbar-width: none; /* Hide scrollbar Firefox */
+        }
+        .vertical-menu-tray::-webkit-scrollbar { display: none; } /* Hide scrollbar Chrome/Safari */
+
+        .filter-node {
+            width: 64px; height: 64px; border-radius: 50%;
+            background: var(--glass); border: 2px solid white;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.25);
+            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+            display: flex; justify-content: center; align-items: center;
+            font-size: 26px; font-weight: bold; cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .filter-node.active {
+            background: var(--glass-active); border-color: var(--accent);
+            transform: scale(1.12); box-shadow: 0 0 15px rgba(46,204,113,0.5);
+        }
+
+        /* Native Button Override rules */
         #XRButton {
-            border: none !important;
-            bottom: 50px !important;
-            left: 50% !important;
-            transform: translateX(-50%) !important;
-            background-color: var(--success) !important;
-            color: white !important;
-            padding: 16px 32px !important;
-            border-radius: 30px !important;
-            font-size: 16px !important;
-            font-weight: bold !important;
-            box-shadow: 0 6px 20px rgba(46, 204, 113, 0.4) !important;
-            display: none;
+            border: none !important; bottom: 40px !important; left: 50% !important;
+            transform: translateX(-50%) !important; background: var(--accent) !important;
+            color: white !important; padding: 16px 36px !important; border-radius: 35px !important;
+            font-size: 16px !important; font-weight: bold !important; display: none;
+            box-shadow: 0 10px 25px rgba(46, 204, 113, 0.4) !important;
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -124,21 +94,22 @@
 
     <div id="loader-screen">
         <div class="loader-card">
-            <h2>Food AR Engine</h2>
-            <p id="loader-status">Preload the 3D model locally onto your phone.</p>
-            
-            <div class="progress-container" id="p-bar-container" style="display:none;">
-                <div id="progress-bar"></div>
-            </div>
-            <div id="percentage-text" style="display:none; font-weight:bold; margin-bottom:15px;">0%</div>
-
-            <button id="start-download-btn" class="download-btn" onclick="beginAssetDownload()">Download Model</button>
+            <h3 style="margin:0 0 10px 0;">AR Engine Preloader</h3>
+            <p id="loader-status" style="font-size:14px; color:#a4b0be; margin-bottom:20px;">Download asset packs to local memory cache.</p>
+            <div class="progress-bar-bg" id="p-bar-container" style="display:none;"><div id="progress-bar"></div></div>
+            <div id="percentage-text" style="display:none; font-size:18px; font-weight:700; margin-bottom:15px;">0%</div>
+            <button id="start-btn" class="btn" onclick="triggerAssetEngineDownload()">Download Assets</button>
         </div>
     </div>
 
     <div id="ar-ui-layer">
-        <div id="status-tag" class="instruction-tag">
-            <span id="instruction-text">Tap START AR to launch camera</span>
+        <div class="hud-status" id="hud-text">Move camera to find floor or table</div>
+        
+        <div class="vertical-menu-tray">
+            <div class="filter-node active" onclick="switchActiveFilter(0, this)">🥑</div>
+            <div class="filter-node" onclick="switchActiveFilter(1, this)">🚗</div>
+            <div class="filter-node" onclick="switchActiveFilter(2, this)">🪑</div>
+            <div class="filter-node" onclick="switchActiveFilter(3, this)">🍰</div>
         </div>
     </div>
 
@@ -146,34 +117,43 @@
         import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/ARButton.js';
 
         let container, camera, scene, renderer;
-        let reticle, arAssetModel;
-        let hitTestSource = null;
-        let hitTestSourceRequested = false;
-        let objectPlaced = false;
+        let reticle;
+        let hitTestSource = null, hitTestSourceRequested = false;
 
-        const instructionText = document.getElementById('instruction-text');
+        // Inventory Model Catalog Config mapping
+        const modelsCatalog = [
+            { name: 'Avocado', url: './Avocado.glb', scale: 4.0, mesh: null },
+            { name: 'ToyCar', url: './ToyCar.glb', scale: 0.15, mesh: null },
+            { name: 'Chair', url: './Chair.glb', scale: 0.6, mesh: null },
+            { name: 'Cake', url: './Cake.glb', scale: 0.4, mesh: null }
+        ];
 
-        window.beginAssetDownload = function() {
-            document.getElementById('start-download-btn').style.display = 'none';
+        let activeIndex = 0;
+        let activeModelInstance = null;
+        let isHolding = false;
+
+        const hudText = document.getElementById('hud-text');
+
+        window.triggerAssetEngineDownload = function() {
+            document.getElementById('start-btn').style.display = 'none';
             document.getElementById('p-bar-container').style.display = 'block';
             document.getElementById('percentage-text').style.display = 'block';
-            document.getElementById('loader-status').innerHTML = "Extracting binary meshes...";
             
-            setupGraphicsPipeline();
+            initGraphicsPipeline();
         }
 
-        function setupGraphicsPipeline() {
+        function initGraphicsPipeline() {
             container = document.createElement('div');
             document.body.appendChild(container);
 
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-            const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
-            scene.add(ambientLight);
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
-            directionalLight.position.set(2, 5, 3);
-            scene.add(directionalLight);
+            // Studio Lighting Setup
+            scene.add(new THREE.AmbientLight(0xffffff, 1.4));
+            const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+            sun.position.set(2, 6, 4);
+            scene.add(sun);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
@@ -181,95 +161,102 @@
             renderer.xr.enabled = true;
             container.appendChild(renderer.domElement);
 
+            // Grid Tracking Reticle
             reticle = new THREE.Mesh(
-                new THREE.RingGeometry(0.08, 0.12, 32).rotateX(-Math.PI / 2),
+                new THREE.RingGeometry(0.06, 0.09, 32).rotateX(-Math.PI / 2),
                 new THREE.MeshBasicMaterial({ color: 0x2ecc71 })
             );
             reticle.matrixAutoUpdate = false;
             reticle.visible = false;
             scene.add(reticle);
 
-            // TARGET LOCAL COMPRESSED BINARY ASSET
-            const loader = new THREE.GLTFLoader();
-            const assetLocalUrl = './Avocado.glb';
-
-            loader.load(
-                assetLocalUrl, 
-                (gltf) => {
-                    arAssetModel = gltf.scene;
-                    // Scale up because the default model is real-world avocado scale (small)
-                    arAssetModel.scale.set(3.5, 3.5, 3.5);
-                    arAssetModel.visible = false;
-                    scene.add(arAssetModel);
-
-                    const controller = renderer.xr.getController(0);
-                    controller.addEventListener('select', tryPlacingObject);
-                    scene.add(controller);
-
-                    window.addEventListener('click', tryPlacingObject);
-                    window.addEventListener('touchstart', tryPlacingObject);
-                    window.addEventListener('resize', onWindowResize);
-                    
-                    renderer.setAnimationLoop(render);
-                    triggerARReadyState();
-                },
-                (xhr) => {
-                    if (xhr.total > 0) {
-                        const percentComplete = Math.round((xhr.loaded / xhr.total) * 100);
-                        document.getElementById('progress-bar').style.width = percentComplete + '%';
-                        document.getElementById('percentage-text').innerHTML = percentComplete + '%';
-                    } else {
-                        document.getElementById('percentage-text').innerHTML = "Parsing file...";
-                    }
-                },
-                (error) => {
-                    console.error("Local file read issue:", error);
-                    document.getElementById('loader-status').innerHTML = "Error rendering local file asset.";
-                }
-            );
+            loadCatalogSequentially(0);
         }
 
-        function triggerARReadyState() {
-            const webxrBtn = ARButton.createButton(renderer, { 
+        // Sequential local caching loop
+        function loadCatalogSequentially(index) {
+            if (index >= modelsCatalog.length) {
+                completeEngineValidation();
+                return;
+            }
+
+            document.getElementById('loader-status').innerHTML = `Caching model pack: ${modelsCatalog[index].name}...`;
+            const loader = new THREE.GLTFLoader();
+            
+            loader.load(modelsCatalog[index].url, (gltf) => {
+                const modelScene = gltf.scene;
+                const s = modelsCatalog[index].scale;
+                modelScene.scale.set(s, s, s);
+                modelScene.visible = false;
+                scene.add(modelScene);
+                
+                modelsCatalog[index].mesh = modelScene;
+                
+                // Track forward loop progress 
+                const percentage = Math.round(((index + 1) / modelsCatalog.length) * 100);
+                document.getElementById('progress-bar').style.width = percentage + '%';
+                document.getElementById('percentage-text').innerHTML = percentage + '%';
+                
+                loadCatalogSequentially(index + 1);
+            }, undefined, (err) => {
+                console.error("Critical Asset failed loading step: ", err);
+                document.getElementById('loader-status').innerHTML = `Missing asset tracking: ${modelsCatalog[index].name}.glb. Check filename match.`;
+            });
+        }
+
+        function completeEngineValidation() {
+            const xrBtn = ARButton.createButton(renderer, {
                 requiredFeatures: ['hit-test'],
                 optionalFeatures: ['dom-overlay'],
                 domOverlay: { root: document.body }
             });
-            document.body.appendChild(webxrBtn);
+            document.body.appendChild(xrBtn);
 
             document.getElementById('loader-screen').style.display = 'none';
-            document.getElementById('ar-ui-layer').style.display = 'flex';
-            webxrBtn.style.display = "block";
+            document.getElementById('ar-ui-layer').style.display = 'block';
+            xrBtn.style.display = 'block';
+
+            setupInteractionListeners();
+            renderer.setAnimationLoop(renderLoop);
         }
 
-        function tryPlacingObject() {
-            if (!arAssetModel || objectPlaced) return;
+        // --- Interaction Drag & Drop Tracking Logic ---
+        function setupInteractionListeners() {
+            // Track when user holds down on screen
+            window.addEventListener('touchstart', (e) => { isHolding = true; });
+            window.addEventListener('mousedown', (e) => { isHolding = true; });
 
-            if (reticle.visible) {
-                arAssetModel.position.setFromMatrixPosition(reticle.matrix);
-                arAssetModel.quaternion.setFromRotationMatrix(reticle.matrix);
-            } else {
-                const direction = new THREE.Vector3();
-                camera.getWorldDirection(direction);
-                arAssetModel.position.copy(camera.position).add(direction.multiplyScalar(0.8));
-                arAssetModel.position.y -= 0.1; 
-                arAssetModel.rotation.set(0, camera.rotation.y, 0);
+            // Track when user releases screen
+            window.addEventListener('touchend', (e) => { isHolding = false; });
+            window.addEventListener('mouseup', (e) => { isHolding = false; });
+        }
+
+        // Global function attached to UI nodes
+        window.switchActiveFilter = function(targetIdx, element) {
+            if (targetIdx === activeIndex) return;
+
+            // Remove active classes from other menu circles
+            document.querySelectorAll('.filter-node').forEach(el => el.classList.remove('active'));
+            element.classList.add('active');
+
+            // Instantly hide the old active model instance
+            if (activeModelInstance) {
+                activeModelInstance.visible = false;
             }
 
-            arAssetModel.visible = true;
-            objectPlaced = true;
-            reticle.visible = false;
-            instructionText.innerHTML = "✅ Object Placed! Move around it.";
+            activeIndex = targetIdx;
+            activeModelInstance = modelsCatalog[activeIndex].mesh;
+            
+            // If the ring tracking is on a surface, instantly snap the new model there
+            if (reticle.visible && activeModelInstance) {
+                activeModelInstance.position.setFromMatrixPosition(reticle.matrix);
+                activeModelInstance.quaternion.setFromRotationMatrix(reticle.matrix);
+                activeModelInstance.visible = true;
+            }
         }
 
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        function render(timestamp, frame) {
-            if (frame && !objectPlaced) {
+        function renderLoop(timestamp, frame) {
+            if (frame) {
                 const referenceSpace = renderer.xr.getReferenceSpace();
                 const session = renderer.xr.getSession();
 
@@ -279,31 +266,47 @@
                             hitTestSource = source;
                         });
                     });
-                    session.addEventListener('end', () => {
-                        hitTestSourceRequested = false;
-                        hitTestSource = null;
-                    });
                     hitTestSourceRequested = true;
                 }
 
                 if (hitTestSource) {
                     const hitTestResults = frame.getHitTestResults(hitTestSource);
+
                     if (hitTestResults.length > 0) {
                         const hit = hitTestResults[0];
                         const pose = hit.getPose(referenceSpace);
+
                         reticle.visible = true;
                         reticle.matrix.fromArray(pose.transform.matrix);
-                        instructionText.innerHTML = "Surface found! Tap anywhere to place 🥑";
+
+                        // INITIAL STATE: If no item is deployed yet, load index 0 onto first surface match
+                        if (!activeModelInstance) {
+                            activeModelInstance = modelsCatalog[activeIndex].mesh;
+                        }
+
+                        // HIGH FREQUENCY SNAP COUPLING (Anti-Floating Logic):
+                        // If user is holding their finger down OR the item hasn't been locked down yet,
+                        // constantly glue the model's position directly onto the surface tracking data.
+                        if (isHolding || !activeModelInstance.visible) {
+                            activeModelInstance.position.setFromMatrixPosition(reticle.matrix);
+                            activeModelInstance.quaternion.setFromRotationMatrix(reticle.matrix);
+                            activeModelInstance.visible = true;
+                            hudText.innerHTML = `Hold & drag to slide ${modelsCatalog[activeIndex].name}! 🌟`;
+                        }
                     } else {
                         reticle.visible = false;
-                        instructionText.innerHTML = "Scanning surface... Or tap screen to force place!";
+                        if (!activeModelInstance || !activeModelInstance.visible) {
+                            hudText.innerHTML = "Point at floor or table surface... 🔍";
+                        }
                     }
                 }
             }
 
-            if (objectPlaced && arAssetModel) {
-                arAssetModel.rotation.y += 0.005;
+            // Continuous slow spin on whatever model is currently active
+            if (activeModelInstance && activeModelInstance.visible && !isHolding) {
+                activeModelInstance.rotation.y += 0.006;
             }
+
             renderer.render(scene, camera);
         }
     </script>
