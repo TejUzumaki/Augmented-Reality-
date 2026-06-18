@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Preloaded WebXR Ramen AR</title>
+    <title>Preloaded Local GLB AR</title>
     <style>
         :root {
-            --primary: #ff7675;
+            --primary: #2ecc71;
             --success: #2ecc71;
-            --surface: #2d3436;
+            --surface: #1e272e;
         }
 
         body, html {
@@ -16,20 +16,19 @@
             padding: 0;
             overflow: hidden;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: #1e272e;
+            background-color: var(--surface);
             width: 100%;
             height: 100%;
             color: white;
         }
 
-        /* 1. Preloader Screen Overlay */
         #loader-screen {
             position: fixed;
             top: 0;
             left: 0;
             width: 100vw;
             height: 100vh;
-            background-color: #1e272e;
+            background-color: var(--surface);
             z-index: 1000;
             display: flex;
             flex-direction: column;
@@ -73,10 +72,9 @@
             font-weight: bold;
             border-radius: 30px;
             cursor: pointer;
-            box-shadow: 0 5px 15px rgba(255, 118, 117, 0.4);
+            box-shadow: 0 5px 15px rgba(46, 204, 113, 0.4);
         }
 
-        /* 2. AR HUD Interface Styling */
         #ar-ui-layer {
             position: absolute;
             top: 0;
@@ -90,7 +88,7 @@
             z-index: 10;
             pointer-events: none;
             padding-bottom: 50px;
-            display: none; /* Kept hidden until download completes */
+            display: none;
         }
 
         .instruction-tag {
@@ -104,7 +102,6 @@
             border: 1px solid rgba(255,255,255,0.1);
         }
 
-        /* Target formatting for injected native launch button */
         #XRButton {
             border: none !important;
             bottom: 50px !important;
@@ -127,8 +124,8 @@
 
     <div id="loader-screen">
         <div class="loader-card">
-            <h2 id="loader-title">Ramen 3D Engine</h2>
-            <p id="loader-status">Download the 3D assets locally before entering AR.</p>
+            <h2>Food AR Engine</h2>
+            <p id="loader-status">Preload the 3D model locally onto your phone.</p>
             
             <div class="progress-container" id="p-bar-container" style="display:none;">
                 <div id="progress-bar"></div>
@@ -141,7 +138,7 @@
 
     <div id="ar-ui-layer">
         <div id="status-tag" class="instruction-tag">
-            <span id="instruction-text">Tap START AR to position object</span>
+            <span id="instruction-text">Tap START AR to launch camera</span>
         </div>
     </div>
 
@@ -149,19 +146,18 @@
         import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/ARButton.js';
 
         let container, camera, scene, renderer;
-        let reticle, foodModel;
+        let reticle, arAssetModel;
         let hitTestSource = null;
         let hitTestSourceRequested = false;
         let objectPlaced = false;
 
         const instructionText = document.getElementById('instruction-text');
 
-        // Expose download function to window context
         window.beginAssetDownload = function() {
             document.getElementById('start-download-btn').style.display = 'none';
             document.getElementById('p-bar-container').style.display = 'block';
             document.getElementById('percentage-text').style.display = 'block';
-            document.getElementById('loader-status').innerHTML = "Downloading 3D meshes and textures...";
+            document.getElementById('loader-status').innerHTML = "Extracting binary meshes...";
             
             setupGraphicsPipeline();
         }
@@ -173,8 +169,7 @@
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-            // Lighting variables
-            const ambientLight = new THREE.AmbientLight(0xffffff, 1.3);
+            const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
             scene.add(ambientLight);
             const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
             directionalLight.position.set(2, 5, 3);
@@ -186,29 +181,27 @@
             renderer.xr.enabled = true;
             container.appendChild(renderer.domElement);
 
-            // Hidden target alignment reticle 
             reticle = new THREE.Mesh(
-                new THREE.RingGeometry(0.1, 0.14, 32).rotateX(-Math.PI / 2),
-                new THREE.MeshBasicMaterial({ color: 0xff7675 })
+                new THREE.RingGeometry(0.08, 0.12, 32).rotateX(-Math.PI / 2),
+                new THREE.MeshBasicMaterial({ color: 0x2ecc71 })
             );
             reticle.matrixAutoUpdate = false;
             reticle.visible = false;
             scene.add(reticle);
 
-            // Execute tracked safe download
+            // TARGET LOCAL COMPRESSED BINARY ASSET
             const loader = new THREE.GLTFLoader();
-            const foodUrl = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/RamenBowl/glTF/RamenBowl.gltf';
+            const assetLocalUrl = './Avocado.glb';
 
             loader.load(
-                foodUrl, 
-                // 1. Success Callback Function
+                assetLocalUrl, 
                 (gltf) => {
-                    foodModel = gltf.scene;
-                    foodModel.scale.set(0.7, 0.7, 0.7);
-                    foodModel.visible = false;
-                    scene.add(foodModel);
+                    arAssetModel = gltf.scene;
+                    // Scale up because the default model is real-world avocado scale (small)
+                    arAssetModel.scale.set(3.5, 3.5, 3.5);
+                    arAssetModel.visible = false;
+                    scene.add(arAssetModel);
 
-                    // Tracked input triggers 
                     const controller = renderer.xr.getController(0);
                     controller.addEventListener('select', tryPlacingObject);
                     scene.add(controller);
@@ -218,31 +211,25 @@
                     window.addEventListener('resize', onWindowResize);
                     
                     renderer.setAnimationLoop(render);
-                    
-                    // Reveal Enter AR Button now that model download complete
                     triggerARReadyState();
                 },
-                // 2. Continuous Progress Callback Function (Updates Percentage Bar)
                 (xhr) => {
                     if (xhr.total > 0) {
                         const percentComplete = Math.round((xhr.loaded / xhr.total) * 100);
                         document.getElementById('progress-bar').style.width = percentComplete + '%';
                         document.getElementById('percentage-text').innerHTML = percentComplete + '%';
                     } else {
-                        // Fallback progress estimation if file headers omit content-length
-                        document.getElementById('percentage-text').innerHTML = "Loading...";
+                        document.getElementById('percentage-text').innerHTML = "Parsing file...";
                     }
                 },
-                // 3. Error Trap Function
                 (error) => {
-                    console.error("Asset download aborted:", error);
-                    document.getElementById('loader-status').innerHTML = "Download failed. Please refresh and check your internet.";
+                    console.error("Local file read issue:", error);
+                    document.getElementById('loader-status').innerHTML = "Error rendering local file asset.";
                 }
             );
         }
 
         function triggerARReadyState() {
-            // Build native WebXR engine activation panel
             const webxrBtn = ARButton.createButton(renderer, { 
                 requiredFeatures: ['hit-test'],
                 optionalFeatures: ['dom-overlay'],
@@ -250,32 +237,29 @@
             });
             document.body.appendChild(webxrBtn);
 
-            // Fade out preloader completely
             document.getElementById('loader-screen').style.display = 'none';
             document.getElementById('ar-ui-layer').style.display = 'flex';
-            
-            // Adjust styles on injected native button to reveal it safely
             webxrBtn.style.display = "block";
         }
 
         function tryPlacingObject() {
-            if (!foodModel || objectPlaced) return;
+            if (!arAssetModel || objectPlaced) return;
 
             if (reticle.visible) {
-                foodModel.position.setFromMatrixPosition(reticle.matrix);
-                foodModel.quaternion.setFromRotationMatrix(reticle.matrix);
+                arAssetModel.position.setFromMatrixPosition(reticle.matrix);
+                arAssetModel.quaternion.setFromRotationMatrix(reticle.matrix);
             } else {
                 const direction = new THREE.Vector3();
                 camera.getWorldDirection(direction);
-                foodModel.position.copy(camera.position).add(direction.multiplyScalar(1.0));
-                foodModel.position.y -= 0.2; 
-                foodModel.rotation.set(0, camera.rotation.y, 0);
+                arAssetModel.position.copy(camera.position).add(direction.multiplyScalar(0.8));
+                arAssetModel.position.y -= 0.1; 
+                arAssetModel.rotation.set(0, camera.rotation.y, 0);
             }
 
-            foodModel.visible = true;
+            arAssetModel.visible = true;
             objectPlaced = true;
             reticle.visible = false;
-            instructionText.innerHTML = "✅ Ramen Served! Walk around it.";
+            instructionText.innerHTML = "✅ Object Placed! Move around it.";
         }
 
         function onWindowResize() {
@@ -309,7 +293,7 @@
                         const pose = hit.getPose(referenceSpace);
                         reticle.visible = true;
                         reticle.matrix.fromArray(pose.transform.matrix);
-                        instructionText.innerHTML = "Surface found! Tap anywhere to serve 🍜";
+                        instructionText.innerHTML = "Surface found! Tap anywhere to place 🥑";
                     } else {
                         reticle.visible = false;
                         instructionText.innerHTML = "Scanning surface... Or tap screen to force place!";
@@ -317,8 +301,8 @@
                 }
             }
 
-            if (objectPlaced && foodModel) {
-                foodModel.rotation.y += 0.005;
+            if (objectPlaced && arAssetModel) {
+                arAssetModel.rotation.y += 0.005;
             }
             renderer.render(scene, camera);
         }
