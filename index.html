@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Enterprise AR Spatial Dashboard</title>
+    <title>Enterprise AR Spatial Dashboard Pro</title>
     <style>
         :root {
             --accent-green: #2ecc71;
             --accent-blue: #3498db;
             --accent-red: #e74c3c;
-            --panel-bg: rgba(15, 18, 24, 0.8);
+            --panel-bg: rgba(15, 18, 24, 0.85);
             --glass-border: rgba(255, 255, 255, 0.12);
             --glass-text: #f1f2f6;
             --active-glow: rgba(46, 204, 113, 0.35);
@@ -23,7 +23,7 @@
             user-select: none; -webkit-user-select: none;
         }
 
-        /* --- LOADING SCREEN OVERLAY --- */
+        /* --- PRELOADER SCREEN OVERLAY --- */
         #loader-screen {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background: radial-gradient(circle at center, #141923 0%, #050608 100%);
@@ -45,7 +45,7 @@
             box-shadow: 0 10px 25px rgba(46, 204, 113, 0.25);
         }
 
-        /* --- DASHBOARD UI LAYER --- */
+        /* --- DASHBOARD UI LAYERS --- */
         #ar-ui-layer {
             position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
             z-index: 10; pointer-events: none; display: none;
@@ -112,14 +112,21 @@
         .control-btn {
             background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border);
             color: white; padding: 12px; border-radius: 14px; font-size: 12px; font-weight: 600;
-            cursor: pointer; text-align: center;
+            cursor: pointer; text-align: center; transition: all 0.2s;
+        }
+        .control-btn:active { background: rgba(255, 255, 255, 0.15); }
+        .mapping-btn {
+            grid-column: span 2; background: linear-gradient(135deg, rgba(52, 152, 219, 0.2), rgba(46, 204, 113, 0.2));
+            border: 1px solid var(--accent-blue); color: #fff; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
         }
 
+        /* WebXR Built-In Enter Button Layout Styling Overrides */
         #XRButton {
-            border: none !important; bottom: auto !important; top: 50% !important; left: 50% !important;
+            border: none !important; bottom: auto !important; top: 40% !important; left: 50% !important;
             transform: translate(-50%, -50%) !important; background: linear-gradient(135deg, var(--accent-blue), var(--accent-green)) !important;
             color: white !important; padding: 18px 44px !important; border-radius: 35px !important;
             font-size: 16px !important; font-weight: bold !important; display: none; z-index: 2000;
+            box-shadow: 0 15px 35px rgba(46, 204, 113, 0.3) !important;
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -163,6 +170,7 @@
                 </div>
             </div>
             <div class="control-grid">
+                <button class="control-btn mapping-btn" onclick="toggleAccurateMappingFallback()">Accurate Mapping (3D View)</button>
                 <button class="control-btn" onclick="executeManualResetRotation()">Reset Rotation</button>
                 <button class="control-btn" onclick="executeProportionalResetScale()">Reset Scale</button>
             </div>
@@ -173,10 +181,9 @@
         import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/ARButton.js';
 
         let container, camera, scene, renderer;
-        let surfaceScannerMat, shadowPlane;
+        let surfaceScannerMat, shadowPlane, fallbackGrid;
         let hitTestSource = null, hitTestSourceRequested = false;
 
-        // REAL-WORLD SCALING TUNING (Metric 1:1 Scale Values)
         const modelsCatalog = [
             { name: 'Avocado (Real Scale)', url: './Avocado.glb', scale: 1.0, icon: '🥑', mesh: null },
             { name: 'Racing Car (Real Scale)', url: './ToyCar.glb', scale: 1.0, icon: '🚗', mesh: null },
@@ -187,6 +194,7 @@
         let activeModelInstance = null;
         let isHolding = false;
         let hasBeenPlacedOnce = false;
+        let fallbackModeActive = false; // Tracks if accurate mapping fallback grid override is active
 
         let startTouchDistance = 0, startModelScale = new THREE.Vector3();
         let startTouchAngle = 0, startModelRotationY = 0;
@@ -208,9 +216,10 @@
 
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+            camera.position.set(0, 0.4, 0.6); // Set a natural viewing angle for fallback mode
 
             scene.add(new THREE.AmbientLight(0xffffff, 1.2));
-            const sun = new THREE.DirectionalLight(0xffffff, 1.3);
+            const sun = new THREE.DirectionalLight(0xffffff, 1.4);
             sun.position.set(5, 10, 5);
             sun.castShadow = true;
             sun.shadow.mapSize.set(1024, 1024);
@@ -232,13 +241,12 @@
             shadowPlane.visible = false;
             scene.add(shadowPlane);
 
-            // --- ADVANCED SURFACE SCANNER BOUNDS LAYER ---
-            // Replaces old green ring with a realistic rectangular boundary matrix selector
+            // Interactive Transparent Boundary Scanner Mat
             const scannerGeo = new THREE.PlaneGeometry(0.35, 0.35);
             surfaceScannerMat = new THREE.Mesh(
                 scannerGeo,
                 new THREE.MeshBasicMaterial({
-                    color: 0xe74c3c, // Starts RED when tracking is unverified
+                    color: 0xe74c3c, 
                     side: THREE.DoubleSide,
                     transparent: true,
                     opacity: 0.35,
@@ -248,6 +256,12 @@
             surfaceScannerMat.rotation.x = -Math.PI / 2;
             surfaceScannerMat.matrixAutoUpdate = false;
             scene.add(surfaceScannerMat);
+
+            // fallback mode grid setup
+            fallbackGrid = new THREE.GridHelper(10, 20, 0x3498db, 0x2c3e50);
+            fallbackGrid.position.y = -0.1;
+            fallbackGrid.visible = false;
+            scene.add(fallbackGrid);
 
             loadCatalogSequentially(0);
         }
@@ -327,7 +341,6 @@
             window.addEventListener('mousedown', () => { isHolding = true; });
             window.addEventListener('mouseup', () => { isHolding = false; });
             
-            // TAP-TO-PLACE ON CONFIRMED SURFACE EXECUTOR
             window.addEventListener('click', () => {
                 if (surfaceScannerMat.visible && !hasBeenPlacedOnce && activeModelInstance) {
                     hasBeenPlacedOnce = true;
@@ -375,6 +388,46 @@
             activeModelInstance = modelsCatalog[activeIndex].mesh;
             hasBeenPlacedOnce = false; 
             document.getElementById('node-title').innerHTML = modelsCatalog[activeIndex].name;
+
+            if (fallbackModeActive) {
+                activateFallbackModelPlacement();
+            }
+        }
+
+        // --- ACCURATE MAPPING CONSOLE MODE TOGGLE ---
+        window.toggleAccurateMappingFallback = function() {
+            fallbackModeActive = !fallbackModeActive;
+            const btn = document.querySelector('.mapping-btn');
+
+            if (fallbackModeActive) {
+                btn.innerHTML = "Exit Accurate Mapping";
+                btn.style.background = "linear-gradient(135deg, rgba(231, 76, 60, 0.2), rgba(231, 76, 60, 0.4))";
+                btn.style.borderColor = "var(--accent-red)";
+                
+                renderer.setClearColor(0x0b0c10, 1); // Kill transparent viewport, enforce dark theme workspace
+                fallbackGrid.visible = true;
+                surfaceScannerMat.visible = false;
+                
+                activateFallbackModelPlacement();
+            } else {
+                btn.innerHTML = "Accurate Mapping (3D View)";
+                btn.style.background = "linear-gradient(135deg, rgba(52, 152, 219, 0.2), rgba(46, 204, 113, 0.2))";
+                btn.style.borderColor = "var(--accent-blue)";
+                
+                renderer.setClearColor(0x000000, 0); // Re-open alpha transparent viewport channels for AR pass
+                fallbackGrid.visible = false;
+                hasBeenPlacedOnce = false;
+                if (activeModelInstance) activeModelInstance.visible = false;
+            }
+        }
+
+        function activateFallbackModelPlacement() {
+            if (activeModelInstance) {
+                activeModelInstance.position.set(0, -0.1, -0.4); // Centers model neatly on screen grid
+                activeModelInstance.visible = true;
+                hasBeenPlacedOnce = true;
+                shadowPlane.visible = false;
+            }
         }
 
         window.executeManualResetRotation = function() { if (activeModelInstance) activeModelInstance.rotation.set(0, 0, 0); }
@@ -393,10 +446,25 @@
                 frameCount = 0; lastFrameTime = currentTime;
             }
 
-            // DEFAULT RE-SCANNING BASE STATE (RED OVERLAY ACCORDING TO VIEWPORT POSITION)
+            // IF ACCURATE MAPPING CONSOLE MODE IS ENGAGED: Force stable fallback rendering loop parameters
+            if (fallbackModeActive) {
+                document.getElementById('status-container').classList.add('tracking-active');
+                document.getElementById('telemetry-mtx').innerHTML = "STUDIO";
+                document.getElementById('node-alignment').innerHTML = "STUDIO GRID";
+                document.getElementById('node-alignment').style.color = "var(--accent-blue)";
+                hudText.innerHTML = "ACCURATE MAPPING ACTIVE";
+                
+                if (activeModelInstance && activeModelInstance.visible && !isHolding && startTouchDistance === 0) {
+                    activeModelInstance.rotation.y += 0.005; // Spin model cleanly in empty virtual room
+                }
+                renderer.render(scene, camera);
+                return; // Stop processing hit tests while in fallback mode
+            }
+
+            // STANDALONE NATIVE WEBXR PASS THROUGH LOGIC
             if (!frame || !hitTestSource) {
                 surfaceScannerMat.visible = true;
-                surfaceScannerMat.material.color.setHex(0xe74c3c); // RED: System loses matrix connection
+                surfaceScannerMat.material.color.setHex(0xe74c3c); 
                 document.getElementById('status-container').classList.remove('tracking-active');
                 document.getElementById('telemetry-mtx').innerHTML = "SEARCHING";
                 document.getElementById('node-alignment').innerHTML = "Searching Floor";
@@ -422,12 +490,10 @@
                         const hit = hitTestResults[0];
                         const pose = hit.getPose(referenceSpace);
 
-                        // SURFACE FOUND: Switch dashboard elements and turn rectangle GREEN
                         document.getElementById('status-container').classList.add('tracking-active');
                         document.getElementById('telemetry-mtx').innerHTML = "LOCKED";
-                        surfaceScannerMat.material.color.setHex(0x2ecc71); // GREEN: Valid space detected
+                        surfaceScannerMat.material.color.setHex(0x2ecc71); 
                         
-                        // Show bounding plane indicator when placing OR when holding to drag
                         if (!hasBeenPlacedOnce || isHolding) {
                             surfaceScannerMat.visible = true;
                         } else {
@@ -440,8 +506,7 @@
                             activeModelInstance = modelsCatalog[activeIndex].mesh;
                         }
 
-                        // Boundary lock mapping sequence
-                        if (activeModelInstance && (isHolding || !hasBeenPlacedOnce)) {
+                        if (activeModelInstance && (isHolding || !activeModelInstance.visible)) {
                             activeModelInstance.position.setFromMatrixPosition(surfaceScannerMat.matrix);
                             shadowPlane.position.setFromMatrixPosition(surfaceScannerMat.matrix);
                             
@@ -459,7 +524,6 @@
                             }
                         }
                     } else {
-                        // Keep scanner visible but turn RED if tracking drops
                         surfaceScannerMat.visible = true;
                         surfaceScannerMat.material.color.setHex(0xe74c3c);
                         document.getElementById('status-container').classList.remove('tracking-active');
@@ -468,7 +532,6 @@
                         document.getElementById('node-alignment').style.color = "var(--accent-red)";
                         
                         if (!hasBeenPlacedOnce) {
-                            reticle.visible = false;
                             hudText.innerHTML = "SLOWLY MOVE CAMERA";
                         }
                     }
