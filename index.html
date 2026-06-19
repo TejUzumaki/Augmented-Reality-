@@ -72,7 +72,7 @@
         .pulse-indicator { width: 8px; height: 8px; background-color: var(--accent-red); border-radius: 50%; transition: background-color 0.3s; }
         .tracking-active .pulse-indicator { background-color: var(--accent-green); box-shadow: 0 0 10px var(--accent-green); }
 
-        /* Snapchat-Style Premium Vertical Menu */
+        /* Vertical Selection Menu */
         .right-lens-tray {
             position: absolute; right: 20px; top: 45%; transform: translateY(-50%);
             display: flex; flex-direction: column; gap: 16px;
@@ -96,7 +96,7 @@
             transform: scale(1.15); box-shadow: 0 0 25px var(--active-glow);
         }
 
-        /* Bottom Advanced Control Panel */
+        /* Bottom Control Panel */
         .bottom-cockpit-panel {
             position: absolute; bottom: 25px; left: 20px; right: 20px;
             background: var(--panel-bg); border: 1px solid var(--glass-border);
@@ -120,7 +120,6 @@
             border: 1px solid var(--accent-blue); color: #fff; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
         }
 
-        /* WebXR Built-In Enter Button Layout Styling Overrides */
         #XRButton {
             border: none !important; bottom: auto !important; top: 40% !important; left: 50% !important;
             transform: translate(-50%, -50%) !important; background: linear-gradient(135deg, var(--accent-blue), var(--accent-green)) !important;
@@ -184,17 +183,22 @@
         let surfaceScannerMat, shadowPlane, fallbackGrid;
         let hitTestSource = null, hitTestSourceRequested = false;
 
+        // ANIMATION RIG CLOCK MANAGEMENT PROPERTIES
+        let animationMixer = null;
+        const clock = new THREE.Clock();
+
+        // Humanoid 1:1 Scale Catalog Adjustment (Swapped out Duck for Animated Humanoid)
         const modelsCatalog = [
-            { name: 'Avocado (Real Scale)', url: './Avocado.glb', scale: 1.0, icon: '🥑', mesh: null },
-            { name: 'Racing Car (Real Scale)', url: './ToyCar.glb', scale: 1.0, icon: '🚗', mesh: null },
-            { name: 'Hobby Duck (Real Scale)', url: './Duck.glb', scale: 1.0, icon: '🦆', mesh: null }
+            { name: 'Avocado (Real Scale)', url: './Avocado.glb', scale: 1.0, icon: '🥑', mesh: null, animations: null },
+            { name: 'Racing Car (Real Scale)', url: './ToyCar.glb', scale: 1.0, icon: '🚗', mesh: null, animations: null },
+            { name: 'Humanoid Avatar', url: './CesiumMan.glb', scale: 0.25, icon: '🧍', mesh: null, animations: null }
         ];
 
         let activeIndex = -1;
         let activeModelInstance = null;
         let isHolding = false;
         let hasBeenPlacedOnce = false;
-        let fallbackModeActive = false; // Tracks if accurate mapping fallback grid override is active
+        let fallbackModeActive = false;
 
         let startTouchDistance = 0, startModelScale = new THREE.Vector3();
         let startTouchAngle = 0, startModelRotationY = 0;
@@ -216,7 +220,7 @@
 
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
-            camera.position.set(0, 0.4, 0.6); // Set a natural viewing angle for fallback mode
+            camera.position.set(0, 0.4, 0.6); 
 
             scene.add(new THREE.AmbientLight(0xffffff, 1.2));
             const sun = new THREE.DirectionalLight(0xffffff, 1.4);
@@ -233,7 +237,6 @@
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             container.appendChild(renderer.domElement);
 
-            // Floor Shadows
             const planeGeo = new THREE.PlaneGeometry(30, 30);
             shadowPlane = new THREE.Mesh(planeGeo, new THREE.ShadowMaterial({ opacity: 0.35 }));
             shadowPlane.rotation.x = -Math.PI / 2;
@@ -241,7 +244,6 @@
             shadowPlane.visible = false;
             scene.add(shadowPlane);
 
-            // Interactive Transparent Boundary Scanner Mat
             const scannerGeo = new THREE.PlaneGeometry(0.35, 0.35);
             surfaceScannerMat = new THREE.Mesh(
                 scannerGeo,
@@ -257,7 +259,6 @@
             surfaceScannerMat.matrixAutoUpdate = false;
             scene.add(surfaceScannerMat);
 
-            // fallback mode grid setup
             fallbackGrid = new THREE.GridHelper(10, 20, 0x3498db, 0x2c3e50);
             fallbackGrid.position.y = -0.1;
             fallbackGrid.visible = false;
@@ -284,8 +285,13 @@
                 const s = modelsCatalog[index].scale;
                 modelScene.scale.set(s, s, s);
                 modelScene.visible = false;
-                scene.add(modelScene);
                 
+                // If it contains embedded skeletal animation cycles, match it to the catalog node
+                if(gltf.animations && gltf.animations.length > 0) {
+                    modelsCatalog[index].animations = gltf.animations;
+                }
+                
+                scene.add(modelScene);
                 modelsCatalog[index].mesh = modelScene;
                 
                 const percentage = Math.round(((index + 1) / modelsCatalog.length) * 100);
@@ -317,6 +323,9 @@
 
             activeIndex = firstIdx;
             document.getElementById('node-title').innerHTML = modelsCatalog[activeIndex].name;
+            
+            // Check if the initial default model has built-in bone rigs to play
+            triggerModelRigPlayback();
 
             const xrBtn = ARButton.createButton(renderer, {
                 requiredFeatures: ['hit-test'],
@@ -389,12 +398,25 @@
             hasBeenPlacedOnce = false; 
             document.getElementById('node-title').innerHTML = modelsCatalog[activeIndex].name;
 
+            triggerModelRigPlayback();
+
             if (fallbackModeActive) {
                 activateFallbackModelPlacement();
             }
         }
 
-        // --- ACCURATE MAPPING CONSOLE MODE TOGGLE ---
+        // --- ENFORCED BONE PLAYBACK TRACK GENERATOR ---
+        function triggerModelRigPlayback() {
+            if (animationMixer) { animationMixer.stopAllAction(); animationMixer = null; }
+            
+            const currentItem = modelsCatalog[activeIndex];
+            if (currentItem && currentItem.mesh && currentItem.animations) {
+                animationMixer = new THREE.AnimationMixer(currentItem.mesh);
+                const action = animationMixer.clipAction(currentItem.animations[0]);
+                action.play();
+            }
+        }
+
         window.toggleAccurateMappingFallback = function() {
             fallbackModeActive = !fallbackModeActive;
             const btn = document.querySelector('.mapping-btn');
@@ -404,7 +426,7 @@
                 btn.style.background = "linear-gradient(135deg, rgba(231, 76, 60, 0.2), rgba(231, 76, 60, 0.4))";
                 btn.style.borderColor = "var(--accent-red)";
                 
-                renderer.setClearColor(0x0b0c10, 1); // Kill transparent viewport, enforce dark theme workspace
+                renderer.setClearColor(0x0b0c10, 1); 
                 fallbackGrid.visible = true;
                 surfaceScannerMat.visible = false;
                 
@@ -414,7 +436,7 @@
                 btn.style.background = "linear-gradient(135deg, rgba(52, 152, 219, 0.2), rgba(46, 204, 113, 0.2))";
                 btn.style.borderColor = "var(--accent-blue)";
                 
-                renderer.setClearColor(0x000000, 0); // Re-open alpha transparent viewport channels for AR pass
+                renderer.setClearColor(0x000000, 0); 
                 fallbackGrid.visible = false;
                 hasBeenPlacedOnce = false;
                 if (activeModelInstance) activeModelInstance.visible = false;
@@ -423,7 +445,7 @@
 
         function activateFallbackModelPlacement() {
             if (activeModelInstance) {
-                activeModelInstance.position.set(0, -0.1, -0.4); // Centers model neatly on screen grid
+                activeModelInstance.position.set(0, -0.1, -0.4); 
                 activeModelInstance.visible = true;
                 hasBeenPlacedOnce = true;
                 shadowPlane.visible = false;
@@ -439,6 +461,11 @@
         }
 
         function renderLoop(timestamp, frame) {
+            const delta = clock.getDelta();
+            
+            // Step the skeletal bone vectors forward on every render frame loop
+            if (animationMixer) animationMixer.update(delta);
+
             frameCount++;
             const currentTime = performance.now();
             if (currentTime >= lastFrameTime + 1000) {
@@ -446,7 +473,6 @@
                 frameCount = 0; lastFrameTime = currentTime;
             }
 
-            // IF ACCURATE MAPPING CONSOLE MODE IS ENGAGED: Force stable fallback rendering loop parameters
             if (fallbackModeActive) {
                 document.getElementById('status-container').classList.add('tracking-active');
                 document.getElementById('telemetry-mtx').innerHTML = "STUDIO";
@@ -454,14 +480,14 @@
                 document.getElementById('node-alignment').style.color = "var(--accent-blue)";
                 hudText.innerHTML = "ACCURATE MAPPING ACTIVE";
                 
-                if (activeModelInstance && activeModelInstance.visible && !isHolding && startTouchDistance === 0) {
-                    activeModelInstance.rotation.y += 0.005; // Spin model cleanly in empty virtual room
+                // Do not manually rotate if the humanoid already has built-in walk animation movement
+                if (activeModelInstance && activeModelInstance.visible && !isHolding && startTouchDistance === 0 && !modelsCatalog[activeIndex].animations) {
+                    activeModelInstance.rotation.y += 0.005;
                 }
                 renderer.render(scene, camera);
-                return; // Stop processing hit tests while in fallback mode
+                return; 
             }
 
-            // STANDALONE NATIVE WEBXR PASS THROUGH LOGIC
             if (!frame || !hitTestSource) {
                 surfaceScannerMat.visible = true;
                 surfaceScannerMat.material.color.setHex(0xe74c3c); 
@@ -538,7 +564,7 @@
                 }
             }
 
-            if (activeModelInstance && activeModelInstance.visible && !isHolding && startTouchDistance === 0 && hasBeenPlacedOnce) {
+            if (activeModelInstance && activeModelInstance.visible && !isHolding && startTouchDistance === 0 && hasBeenPlacedOnce && !modelsCatalog[activeIndex].animations) {
                 activeModelInstance.rotation.y += 0.004;
             }
 
