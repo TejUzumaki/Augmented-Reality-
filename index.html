@@ -3,57 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Enterprise AR Lens Control Dashboard</title>
+    <title>Enterprise AR Spatial Dashboard</title>
     <style>
         :root {
             --accent-green: #2ecc71;
             --accent-blue: #3498db;
-            --panel-bg: rgba(15, 18, 24, 0.75);
+            --accent-red: #e74c3c;
+            --panel-bg: rgba(15, 18, 24, 0.8);
             --glass-border: rgba(255, 255, 255, 0.12);
             --glass-text: #f1f2f6;
-            --active-glow: rgba(46, 204, 113, 0.3);
+            --active-glow: rgba(46, 204, 113, 0.35);
         }
 
         body, html {
             margin: 0; padding: 0; overflow: hidden;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: #0b0c10;
+            background-color: #050608;
             width: 100%; height: 100%; color: var(--glass-text);
             user-select: none; -webkit-user-select: none;
         }
 
-        /* --- PRELOADER OVERLAY DEEP GLASSMORPHISM --- */
+        /* --- LOADING SCREEN OVERLAY --- */
         #loader-screen {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: radial-gradient(circle at center, #1e272e 0%, #0b0c10 100%);
+            background: radial-gradient(circle at center, #141923 0%, #050608 100%);
             z-index: 1000; display: flex; flex-direction: column; justify-content: center; align-items: center;
         }
         .loader-card {
-            background: rgba(255, 255, 255, 0.03); padding: 40px 30px; border-radius: 28px;
-            text-align: center; box-shadow: 0 30px 70px rgba(0,0,0,0.7);
+            background: rgba(255, 255, 255, 0.02); padding: 40px 30px; border-radius: 28px;
+            text-align: center; box-shadow: 0 30px 70px rgba(0,0,0,0.8);
             width: 85%; max-width: 340px; border: 1px solid var(--glass-border);
             backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
         }
         .progress-container {
             width: 100%; background: rgba(255,255,255,0.06); border-radius: 20px; height: 8px; margin: 25px 0; overflow: hidden;
-            border: 1px solid rgba(255,255,255,0.05);
         }
         #progress-bar { width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-blue), var(--accent-green)); transition: width 0.2s ease-out; }
         .action-btn {
             background: linear-gradient(135deg, var(--accent-blue), var(--accent-green)); color: white; border: none; padding: 15px 40px;
             font-size: 15px; font-weight: 700; border-radius: 30px; cursor: pointer; letter-spacing: 0.5px;
-            box-shadow: 0 10px 25px rgba(46, 204, 113, 0.25); transition: all 0.2s ease;
+            box-shadow: 0 10px 25px rgba(46, 204, 113, 0.25);
         }
-        .action-btn:active { transform: scale(0.96); opacity: 0.9; }
 
-        /* --- AR CORE DASHBOARD ENGINE HUD --- */
+        /* --- DASHBOARD UI LAYER --- */
         #ar-ui-layer {
             position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
             z-index: 10; pointer-events: none; display: none;
             box-sizing: border-box;
         }
 
-        /* Top Bar Status HUD */
         .dashboard-header {
             position: absolute; top: 20px; left: 20px; right: 20px;
             display: flex; justify-content: space-between; align-items: center;
@@ -63,18 +61,18 @@
             background: var(--panel-bg); border: 1px solid var(--glass-border);
             padding: 10px 18px; border-radius: 20px; font-size: 11px; font-weight: 600;
             font-family: monospace; backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
-            box-shadow: 0 8px 32px rgba(0,0,0,0.2); display: flex; gap: 12px;
+            display: flex; gap: 12px;
         }
         .status-pill {
             background: var(--panel-bg); border: 1px solid var(--glass-border);
             padding: 10px 20px; border-radius: 20px; font-size: 13px; font-weight: 600;
             backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
-            box-shadow: 0 8px 32px rgba(0,0,0,0.2); display: flex; align-items: center; gap: 8px;
+            display: flex; align-items: center; gap: 8px;
         }
-        .pulse-indicator { width: 8px; height: 8px; background-color: #e74c3c; border-radius: 50%; }
+        .pulse-indicator { width: 8px; height: 8px; background-color: var(--accent-red); border-radius: 50%; transition: background-color 0.3s; }
         .tracking-active .pulse-indicator { background-color: var(--accent-green); box-shadow: 0 0 10px var(--accent-green); }
 
-        /* Snapchat-Style Premium Glassmorphism Right-Side Vertical Menu */
+        /* Snapchat-Style Premium Vertical Menu */
         .right-lens-tray {
             position: absolute; right: 20px; top: 45%; transform: translateY(-50%);
             display: flex; flex-direction: column; gap: 16px;
@@ -83,32 +81,27 @@
             background: rgba(255, 255, 255, 0.02); border-radius: 40px;
             border: 1px solid var(--glass-border);
             backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-            box-shadow: 0 15px 35px rgba(0,0,0,0.3);
         }
         .right-lens-tray::-webkit-scrollbar { display: none; }
 
         .filter-node {
             width: 56px; height: 56px; border-radius: 50%;
             background: rgba(255, 255, 255, 0.05); border: 1.5px solid rgba(255,255,255,0.2);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
             display: flex; justify-content: center; align-items: center;
             font-size: 24px; cursor: pointer;
             transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
         }
-        .filter-node:active { transform: scale(0.9); }
         .filter-node.active {
             background: var(--glass-active); border-color: var(--accent-green);
-            transform: scale(1.15); background-color: var(--glass-active);
-            box-shadow: 0 0 25px var(--active-glow);
+            transform: scale(1.15); box-shadow: 0 0 25px var(--active-glow);
         }
 
-        /* Bottom Advanced Settings System Cockpit Panel */
+        /* Bottom Advanced Control Panel */
         .bottom-cockpit-panel {
             position: absolute; bottom: 25px; left: 20px; right: 20px;
             background: var(--panel-bg); border: 1px solid var(--glass-border);
-            border-radius: 24px; padding: 16px 20px; pointer-events: auto;
+            border-radius: 24px; padding: 18px 20px; pointer-events: auto;
             backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-            box-shadow: 0 -10px 40px rgba(0,0,0,0.4);
             display: flex; flex-direction: column; gap: 12px;
         }
         .panel-row { display: flex; justify-content: space-between; align-items: center; }
@@ -119,17 +112,14 @@
         .control-btn {
             background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border);
             color: white; padding: 12px; border-radius: 14px; font-size: 12px; font-weight: 600;
-            cursor: pointer; text-align: center; transition: background 0.2s;
+            cursor: pointer; text-align: center;
         }
-        .control-btn:active { background: rgba(255, 255, 255, 0.15); }
 
-        /* WebXR Engine Launcher Override Config rules */
         #XRButton {
             border: none !important; bottom: auto !important; top: 50% !important; left: 50% !important;
             transform: translate(-50%, -50%) !important; background: linear-gradient(135deg, var(--accent-blue), var(--accent-green)) !important;
             color: white !important; padding: 18px 44px !important; border-radius: 35px !important;
-            font-size: 16px !important; font-weight: bold !important; display: none; letter-spacing: 0.5px;
-            box-shadow: 0 15px 35px rgba(46, 204, 113, 0.4) !important; z-index: 2000;
+            font-size: 16px !important; font-weight: bold !important; display: none; z-index: 2000;
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -151,16 +141,15 @@
         <div class="dashboard-header">
             <div class="telemetry-capsule">
                 <div>FPS: <span id="telemetry-fps" style="color:var(--accent-green)">60</span></div>
-                <div>MTX: <span id="telemetry-mtx" style="color:var(--accent-blue)">TRACKING</span></div>
+                <div>SURF: <span id="telemetry-mtx" style="color:var(--accent-blue)">SEARCHING</span></div>
             </div>
             <div class="status-pill" id="status-container">
                 <span class="pulse-indicator"></span>
-                <span id="hud-text">INITIALIZING</span>
+                <span id="hud-text">SCANNING AREA</span>
             </div>
         </div>
         
-        <div class="right-lens-tray" id="ui-tray">
-            </div>
+        <div class="right-lens-tray" id="ui-tray"></div>
 
         <div class="bottom-cockpit-panel">
             <div class="panel-row">
@@ -170,7 +159,7 @@
                 </div>
                 <div style="text-align: right;">
                     <div class="panel-label">Surface Alignment</div>
-                    <div class="panel-value" id="node-alignment" style="color:var(--accent-green)">Auto-Locked</div>
+                    <div class="panel-value" id="node-alignment" style="color:var(--accent-red)">Searching Floor</div>
                 </div>
             </div>
             <div class="control-grid">
@@ -184,14 +173,14 @@
         import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/ARButton.js';
 
         let container, camera, scene, renderer;
-        let reticle, shadowPlane;
+        let surfaceScannerMat, shadowPlane;
         let hitTestSource = null, hitTestSourceRequested = false;
 
-        // Verified working local asset configuration mapping array
+        // REAL-WORLD SCALING TUNING (Metric 1:1 Scale Values)
         const modelsCatalog = [
-            { name: 'Avocado', url: './Avocado.glb', scale: 4.0, icon: '🥑', mesh: null },
-            { name: 'Racing Car', url: './ToyCar.glb', scale: 0.15, icon: '🚗', mesh: null },
-            { name: 'Hobby Duck', url: './Duck.glb', scale: 0.25, icon: '🦆', mesh: null }
+            { name: 'Avocado (Real Scale)', url: './Avocado.glb', scale: 1.0, icon: '🥑', mesh: null },
+            { name: 'Racing Car (Real Scale)', url: './ToyCar.glb', scale: 1.0, icon: '🚗', mesh: null },
+            { name: 'Hobby Duck (Real Scale)', url: './Duck.glb', scale: 1.0, icon: '🦆', mesh: null }
         ];
 
         let activeIndex = -1;
@@ -199,15 +188,9 @@
         let isHolding = false;
         let hasBeenPlacedOnce = false;
 
-        // Interaction processing metrics
-        let startTouchDistance = 0;
-        let startModelScale = new THREE.Vector3();
-        let startTouchAngle = 0;
-        let startModelRotationY = 0;
-        
-        // FPS telemetry properties
-        let lastFrameTime = performance.now();
-        let frameCount = 0;
+        let startTouchDistance = 0, startModelScale = new THREE.Vector3();
+        let startTouchAngle = 0, startModelRotationY = 0;
+        let lastFrameTime = performance.now(), frameCount = 0;
 
         const hudText = document.getElementById('hud-text');
         const uiTray = document.getElementById('ui-tray');
@@ -216,7 +199,6 @@
             document.getElementById('start-btn').style.display = 'none';
             document.getElementById('p-bar-container').style.display = 'block';
             document.getElementById('percentage-text').style.display = 'block';
-            
             initGraphicsPipeline();
         }
 
@@ -227,13 +209,11 @@
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-            // High Fidelity Studio Lighting
             scene.add(new THREE.AmbientLight(0xffffff, 1.2));
             const sun = new THREE.DirectionalLight(0xffffff, 1.3);
             sun.position.set(5, 10, 5);
             sun.castShadow = true;
-            sun.shadow.mapSize.width = 1024;
-            sun.shadow.mapSize.height = 1024;
+            sun.shadow.mapSize.set(1024, 1024);
             scene.add(sun);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -244,23 +224,30 @@
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             container.appendChild(renderer.domElement);
 
-            // Floor Matte Shadow Receiver Plane
+            // Floor Shadows
             const planeGeo = new THREE.PlaneGeometry(30, 30);
-            const shadowMat = new THREE.ShadowMaterial({ opacity: 0.38 });
-            shadowPlane = new THREE.Mesh(planeGeo, shadowMat);
+            shadowPlane = new THREE.Mesh(planeGeo, new THREE.ShadowMaterial({ opacity: 0.35 }));
             shadowPlane.rotation.x = -Math.PI / 2;
             shadowPlane.receiveShadow = true;
             shadowPlane.visible = false;
             scene.add(shadowPlane);
 
-            // Technical Grid Alignment Target Ring
-            reticle = new THREE.Mesh(
-                new THREE.RingGeometry(0.05, 0.07, 32).rotateX(-Math.PI / 2),
-                new THREE.MeshBasicMaterial({ color: 0x2ecc71 })
+            // --- ADVANCED SURFACE SCANNER BOUNDS LAYER ---
+            // Replaces old green ring with a realistic rectangular boundary matrix selector
+            const scannerGeo = new THREE.PlaneGeometry(0.35, 0.35);
+            surfaceScannerMat = new THREE.Mesh(
+                scannerGeo,
+                new THREE.MeshBasicMaterial({
+                    color: 0xe74c3c, // Starts RED when tracking is unverified
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.35,
+                    depthWrite: false
+                })
             );
-            reticle.matrixAutoUpdate = false;
-            reticle.visible = false;
-            scene.add(reticle);
+            surfaceScannerMat.rotation.x = -Math.PI / 2;
+            surfaceScannerMat.matrixAutoUpdate = false;
+            scene.add(surfaceScannerMat);
 
             loadCatalogSequentially(0);
         }
@@ -277,10 +264,7 @@
             loader.load(modelsCatalog[index].url, (gltf) => {
                 const modelScene = gltf.scene;
                 modelScene.traverse((node) => {
-                    if (node.isMesh) {
-                        node.castShadow = true;
-                        node.receiveShadow = true;
-                    }
+                    if (node.isMesh) { node.castShadow = true; node.receiveShadow = true; }
                 });
 
                 const s = modelsCatalog[index].scale;
@@ -296,7 +280,6 @@
                 
                 loadCatalogSequentially(index + 1);
             }, undefined, (err) => {
-                console.warn(`Skipping un-instantiated node element: ${modelsCatalog[index].name}`);
                 loadCatalogSequentially(index + 1);
             });
         }
@@ -308,22 +291,15 @@
             modelsCatalog.forEach((item, idx) => {
                 if (item.mesh !== null) {
                     if (firstIdx === -1) firstIdx = idx;
-                    
                     const node = document.createElement('div');
                     node.className = `filter-node ${idx === firstIdx ? 'active' : ''}`;
                     node.innerHTML = item.icon;
-                    node.onclick = (e) => {
-                        e.stopPropagation();
-                        switchActiveFilter(idx, node);
-                    };
+                    node.onclick = (e) => { e.stopPropagation(); switchActiveFilter(idx, node); };
                     uiTray.appendChild(node);
                 }
             });
 
-            if (firstIdx === -1) {
-                document.getElementById('loader-status').innerHTML = "Fatal Error: Missing repository GLB packages.";
-                return;
-            }
+            if (firstIdx === -1) return;
 
             activeIndex = firstIdx;
             document.getElementById('node-title').innerHTML = modelsCatalog[activeIndex].name;
@@ -350,6 +326,13 @@
             
             window.addEventListener('mousedown', () => { isHolding = true; });
             window.addEventListener('mouseup', () => { isHolding = false; });
+            
+            // TAP-TO-PLACE ON CONFIRMED SURFACE EXECUTOR
+            window.addEventListener('click', () => {
+                if (surfaceScannerMat.visible && !hasBeenPlacedOnce && activeModelInstance) {
+                    hasBeenPlacedOnce = true;
+                }
+            });
         }
 
         function onTouchStart(e) {
@@ -357,12 +340,10 @@
                 isHolding = true;
             } else if (e.touches.length === 2 && activeModelInstance && activeModelInstance.visible) {
                 isHolding = false; 
-                
                 const dx = e.touches[0].clientX - e.touches[1].clientX;
                 const dy = e.touches[0].clientY - e.touches[1].clientY;
                 startTouchDistance = Math.sqrt(dx * dx + dy * dy);
                 startModelScale.copy(activeModelInstance.scale);
-
                 startTouchAngle = Math.atan2(dy, dx);
                 startModelRotationY = activeModelInstance.rotation.y;
             }
@@ -371,16 +352,13 @@
         function onTouchMove(e) {
             if (e.touches.length === 2 && activeModelInstance && activeModelInstance.visible) {
                 e.preventDefault();
-
                 const dx = e.touches[0].clientX - e.touches[1].clientX;
                 const dy = e.touches[0].clientY - e.touches[1].clientY;
                 
                 const currentDistance = Math.sqrt(dx * dx + dy * dy);
                 if (startTouchDistance > 0) {
-                    const factor = currentDistance / startTouchDistance;
-                    activeModelInstance.scale.copy(startModelScale).multiplyScalar(factor);
+                    activeModelInstance.scale.copy(startModelScale).multiplyScalar(currentDistance / startTouchDistance);
                 }
-
                 const currentAngle = Math.atan2(dy, dx);
                 activeModelInstance.rotation.y = startModelRotationY + (currentAngle - startTouchAngle);
             }
@@ -388,7 +366,6 @@
 
         window.switchActiveFilter = function(targetIdx, element) {
             if (targetIdx === activeIndex) return;
-
             document.querySelectorAll('.filter-node').forEach(el => el.classList.remove('active'));
             element.classList.add('active');
 
@@ -397,15 +374,10 @@
             activeIndex = targetIdx;
             activeModelInstance = modelsCatalog[activeIndex].mesh;
             hasBeenPlacedOnce = false; 
-            
             document.getElementById('node-title').innerHTML = modelsCatalog[activeIndex].name;
         }
 
-        // --- Cockpit Manual Controls Executions ---
-        window.executeManualResetRotation = function() {
-            if (activeModelInstance) activeModelInstance.rotation.set(0, 0, 0);
-        }
-
+        window.executeManualResetRotation = function() { if (activeModelInstance) activeModelInstance.rotation.set(0, 0, 0); }
         window.executeProportionalResetScale = function() {
             if (activeModelInstance && activeIndex !== -1) {
                 const s = modelsCatalog[activeIndex].scale;
@@ -414,13 +386,22 @@
         }
 
         function renderLoop(timestamp, frame) {
-            // High Speed Real-time Telemetry Calculations
             frameCount++;
             const currentTime = performance.now();
             if (currentTime >= lastFrameTime + 1000) {
                 document.getElementById('telemetry-fps').innerHTML = Math.round((frameCount * 1000) / (currentTime - lastFrameTime));
-                frameCount = 0;
-                lastFrameTime = currentTime;
+                frameCount = 0; lastFrameTime = currentTime;
+            }
+
+            // DEFAULT RE-SCANNING BASE STATE (RED OVERLAY ACCORDING TO VIEWPORT POSITION)
+            if (!frame || !hitTestSource) {
+                surfaceScannerMat.visible = true;
+                surfaceScannerMat.material.color.setHex(0xe74c3c); // RED: System loses matrix connection
+                document.getElementById('status-container').classList.remove('tracking-active');
+                document.getElementById('telemetry-mtx').innerHTML = "SEARCHING";
+                document.getElementById('node-alignment').innerHTML = "Searching Floor";
+                document.getElementById('node-alignment').style.color = "var(--accent-red)";
+                hudText.innerHTML = "SCAN ENVIRONMENT";
             }
 
             if (frame) {
@@ -429,9 +410,7 @@
 
                 if (hitTestSourceRequested === false) {
                     session.requestReferenceSpace('viewer').then((viewerSpace) => {
-                        session.requestHitTestSource({ space: viewerSpace }).then((source) => {
-                            hitTestSource = source;
-                        });
+                        session.requestHitTestSource({ space: viewerSpace }).then((source) => { hitTestSource = source; });
                     });
                     hitTestSourceRequested = true;
                 }
@@ -443,55 +422,60 @@
                         const hit = hitTestResults[0];
                         const pose = hit.getPose(referenceSpace);
 
+                        // SURFACE FOUND: Switch dashboard elements and turn rectangle GREEN
                         document.getElementById('status-container').classList.add('tracking-active');
                         document.getElementById('telemetry-mtx').innerHTML = "LOCKED";
-
+                        surfaceScannerMat.material.color.setHex(0x2ecc71); // GREEN: Valid space detected
+                        
+                        // Show bounding plane indicator when placing OR when holding to drag
                         if (!hasBeenPlacedOnce || isHolding) {
-                            reticle.visible = true;
+                            surfaceScannerMat.visible = true;
                         } else {
-                            reticle.visible = false;
+                            surfaceScannerMat.visible = false;
                         }
                         
-                        reticle.matrix.fromArray(pose.transform.matrix);
+                        surfaceScannerMat.matrix.fromArray(pose.transform.matrix);
 
                         if (activeIndex !== -1 && !activeModelInstance) {
                             activeModelInstance = modelsCatalog[activeIndex].mesh;
                         }
 
-                        if (activeModelInstance && (isHolding || !activeModelInstance.visible)) {
-                            activeModelInstance.position.setFromMatrixPosition(reticle.matrix);
-                            shadowPlane.position.setFromMatrixPosition(reticle.matrix);
+                        // Boundary lock mapping sequence
+                        if (activeModelInstance && (isHolding || !hasBeenPlacedOnce)) {
+                            activeModelInstance.position.setFromMatrixPosition(surfaceScannerMat.matrix);
+                            shadowPlane.position.setFromMatrixPosition(surfaceScannerMat.matrix);
                             
                             activeModelInstance.visible = true;
                             shadowPlane.visible = true;
                             
                             if (isHolding) {
                                 hudText.innerHTML = "DRAGGING NODE";
-                                document.getElementById('node-alignment').innerHTML = "SLIDING";
+                                document.getElementById('node-alignment').innerHTML = "RE-POSITIONING";
                                 document.getElementById('node-alignment').style.color = "var(--accent-blue)";
                             } else {
-                                hudText.innerHTML = "SURFACE MATCH";
-                                document.getElementById('node-alignment').innerHTML = "AUTO-LOCKED";
+                                hudText.innerHTML = "TAP TO DEPLOY OBJECT";
+                                document.getElementById('node-alignment').innerHTML = "READY TO PLACE";
                                 document.getElementById('node-alignment').style.color = "var(--accent-green)";
-                                if (!isHolding && !hasBeenPlacedOnce) {
-                                    hasBeenPlacedOnce = true;
-                                }
                             }
                         }
                     } else {
-                        reticle.visible = false;
+                        // Keep scanner visible but turn RED if tracking drops
+                        surfaceScannerMat.visible = true;
+                        surfaceScannerMat.material.color.setHex(0xe74c3c);
                         document.getElementById('status-container').classList.remove('tracking-active');
-                        document.getElementById('telemetry-mtx').innerHTML = "SEARCHING";
+                        document.getElementById('telemetry-mtx').innerHTML = "LOST";
+                        document.getElementById('node-alignment').innerHTML = "Searching Surface";
+                        document.getElementById('node-alignment').style.color = "var(--accent-red)";
                         
-                        if (!activeModelInstance || !activeModelInstance.visible) {
-                            hudText.innerHTML = "SCAN ENVIRONMENT";
+                        if (!hasBeenPlacedOnce) {
+                            reticle.visible = false;
+                            hudText.innerHTML = "SLOWLY MOVE CAMERA";
                         }
                     }
                 }
             }
 
-            // Fallback micro-rotation spin when idle
-            if (activeModelInstance && activeModelInstance.visible && !isHolding && startTouchDistance === 0) {
+            if (activeModelInstance && activeModelInstance.visible && !isHolding && startTouchDistance === 0 && hasBeenPlacedOnce) {
                 activeModelInstance.rotation.y += 0.004;
             }
 
